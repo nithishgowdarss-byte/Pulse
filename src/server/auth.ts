@@ -121,7 +121,7 @@ const MANAGER_DENY: Rule[] = [
   R('*', '/api/freellmapi/(update-config|test-provider)'),
   R('POST', '/api/branches'), R('PUT', '/api/branches/[^/]+'),
   R('*', '/api/branches/[^/]+/sms-config(/.*)?'), R('*', '/api/dlt-templates(/.*)?'),
-  R('*', '/api/rpc/.*'), R('*', '/v1/.*'), R('POST', '/api/automation-rules'),
+  R('*', '/api/rpc/(?!staff_check_(in|out)$).*'), R('*', '/v1/.*'), R('POST', '/api/automation-rules'),
   R('POST', '/api/banners(/.*)?'), R('PUT', '/api/banners/.*'),
   // Global (all-branch) actions
   R('POST', '/api/winback/(campaigns|run)'), R('POST', '/api/automations/run'), R('POST', '/api/churn/refresh'),
@@ -131,6 +131,7 @@ const MANAGER_DENY: Rule[] = [
 ];
 
 const TRAINER_ALLOW: Rule[] = [
+  R('POST', '/api/rpc/staff_check_(in|out)'),
   R('GET', '/api/(banners|announcements|attendance|members|trainers|profiles|branches|day-register|notifications|freeze-requests|crm-activities|leads|churn/predictions|trainer-payroll|payroll/lines|payroll-lines|commission-settlements|staff-attendance|freellmapi/status)'),
   R('GET', '/api/members/[^/]+/(measurements|payments)'),
   R('GET', '/api/retention/(alerts|stale-members|churn-risk-distribution|risk-score/[^/]+)'),
@@ -181,9 +182,11 @@ export function authorize(ctx: AuthzContext, method: string, path: string, body:
   for (const re of MEMBER_ID_IN_PATH) { const m = path.match(re); if (m) memberIds.add(decodeURIComponent(m[1])); }
   for (const v of [b.member_id, b.p_member_id, q.member_id, q.p_member_id, q.memberId, b.memberId, path === '/api/members/activate' ? b.id : undefined]) if (typeof v === 'string' && v) memberIds.add(v);
   for (const arr of [b.member_ids, b.memberIds, b.ids, b.p_member_ids]) if (Array.isArray(arr)) for (const v of arr) if (typeof v === 'string') memberIds.add(v);
+  // Phone-number check-ins are branch-checked by the handler, which names the member's branch (OTHER_BRANCH).
+  if (path === '/api/attendance/check-in' && session.role !== 'member') for (const v of [...memberIds]) if (/^\D*\d{10}\D*$/.test(v) && !v.startsWith('mem_')) memberIds.delete(v);
 
   if (session.role === 'member') {
-    for (const id of memberIds) if (id !== session.id) return 'Members can only access their own records';
+    for (const id of memberIds) if (id !== session.id) return method === 'GET' ? 'Members can only access their own records' : 'Members can only act on their own record';
     if (method === 'POST' && /^\/api\/freeze-requests$/.test(path) && b.member_id !== session.id) {
       return 'Members can only act on their own record';
     }
