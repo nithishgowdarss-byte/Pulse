@@ -189,3 +189,17 @@ describe('audit log entries', () => {
     expect(list.filter((l: any) => typeof l.user_name !== 'string')).toEqual([]);
   });
 });
+
+describe('payments carry branch + gym date', () => {
+  it('activation payment counts in the branch day total', async () => {
+    const c = await superA.post('/api/members').send({ full_name: 'Branch Total', phone: '9123456784', branch_id: 'br_bsk_3' });
+    const id = (c.body.member || c.body).id;
+    const before = (await superA.get('/api/sales-totals?branch_id=br_bsk_3')).body.day;
+    expect((await superA.post(`/api/members/${id}/activate`).send({ subscription_months: 1, amount_paid: 1234 })).status).toBeLessThan(300);
+    const after = (await superA.get('/api/sales-totals?branch_id=br_bsk_3')).body.day;
+    expect(after - before).toBe(1234);
+    const p = (await superA.get(`/api/members/${id}/payments`)).body;
+    const list = Array.isArray(p) ? p : p.payments;
+    expect(list[0]).toMatchObject({ branch_id: 'br_bsk_3', entry_type: 'new' });
+  });
+});

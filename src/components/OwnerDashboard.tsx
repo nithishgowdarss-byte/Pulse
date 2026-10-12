@@ -248,7 +248,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
             </div>
           </div>
           <div>
-            <div className="text-2xl sm:text-3xl font-black font-mono text-emerald-400">
+            <div className="text-xl lg:text-2xl xl:text-3xl font-black font-mono text-emerald-400">
               ₹{totalGrossRevenue.toLocaleString()}
             </div>
             {totalBalanceDue > 0 ? (
@@ -270,7 +270,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
             </div>
           </div>
           <div>
-            <div className="text-2xl sm:text-3xl font-black font-mono text-white">
+            <div className="text-xl lg:text-2xl xl:text-3xl font-black font-mono text-white">
               {activeMembersCount}
             </div>
             <p className="text-[11px] text-zinc-400 font-medium mt-1">
@@ -291,7 +291,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
             </div>
           </div>
           <div>
-            <div className="text-2xl sm:text-3xl font-black font-mono text-red-400">
+            <div className="text-xl lg:text-2xl xl:text-3xl font-black font-mono text-red-400">
               ₹{commissionOverview.aggregatePendingCommissions.toLocaleString()}
             </div>
             <p className="text-[11px] text-zinc-400 font-medium mt-1">
@@ -312,7 +312,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
             </div>
           </div>
           <div>
-            <div className="text-2xl sm:text-3xl font-black font-mono text-indigo-400">
+            <div className="text-xl lg:text-2xl xl:text-3xl font-black font-mono text-indigo-400">
               {branches.length} Locations
             </div>
             <p className="text-[11px] text-zinc-400 font-medium mt-1">

@@ -94,3 +94,26 @@ Keep `SESSION_SECRET` and `SECRETS_KEY` the same across restarts: changing `SECR
   Trainers log sessions (no double-logging within 30 min). Managers and owners can undo the last session, and members see
   the sessions they have left on their pass. You can export a CSV.
 - All CSV exports neutralise spreadsheet formulas (`=`, `+`, `-`, `@`).
+
+## Open it on a real phone (free, nothing deployed)
+
+The QR camera needs HTTPS. The built-in LAN HTTPS mode uses a self-signed certificate and works only on your gym or home Wi-Fi.
+
+1. On the computer that will run Pulse (same Wi-Fi as the phone), with Node 22+ and `openssl`:
+   ```bash
+   npm ci && npm run build
+   cp .env.example .env      # set SESSION_SECRET (32+ chars), SECRETS_KEY (openssl rand -hex 32), SUPER_OWNER_PIN
+   npm run cert:lan          # creates certs/lan.crt + certs/lan.key for this machine's LAN IPs and prints the phone URL
+   HTTPS_CERT=certs/lan.crt HTTPS_KEY=certs/lan.key HOST=0.0.0.0 PORT=3443 npm start
+   ```
+   For a quick demo with sample data and the dev PINs, also set `PULSE_SEED_DEV_PINS=1`. Never use dev PINs for real members.
+2. Allow incoming TCP port 3443 if a firewall asks. On Linux: `sudo ufw allow 3443/tcp`.
+3. On the phone, open the printed `https://<computer-LAN-IP>:3443`. The browser warns that the certificate is not trusted. Choose
+   **Advanced → Proceed** (Chrome) or **Show details → visit this website** (Safari). The warning is expected because the certificate is self-signed.
+4. Sign in. Staff tap **Desk → Start camera → Allow**. A member opens their pass on another phone, and scanning it checks them in.
+5. Limits of self-signed mode: there is no install or offline mode (browsers refuse service workers on untrusted certificates), and every phone sees the warning once.
+   To remove the warning on your own phones, install `certs/lan.crt` as a trusted certificate (Android: Settings → Security → Encryption &
+   credentials → Install a certificate → CA certificate; iOS: AirDrop it, install the profile, then Settings → General → About → Certificate Trust Settings).
+   For real use, put Pulse behind a proper domain with a free Let's Encrypt certificate (Caddy).
+6. A public tunnel (e.g. Cloudflare Tunnel or ngrok) gives a trusted HTTPS URL without installing anything on the phone, but it
+   exposes the app to the internet. Only do that if the owner agrees, with real PINs set and dev PINs off.

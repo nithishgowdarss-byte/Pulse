@@ -1851,6 +1851,17 @@ function seedAt(day: string, hm: string): string {
   return new Date(Number.isFinite(t) ? Math.min(t, latest) : latest).toISOString();
 }
 
+/** Every payment carries its branch, gym-local entry date and type, so per-branch/day totals are right. */
+function normPayment<T extends Record<string, any>>(p: T, entryType?: string): T {
+  const anyP: any = p;
+  const mem = anyP.member_id ? members.find(m => m.id === anyP.member_id) : undefined;
+  if (!anyP.branch_id && mem) anyP.branch_id = mem.branch_id;
+  if (!anyP.created_at) anyP.created_at = new Date().toISOString();
+  if (!anyP.entry_date) anyP.entry_date = gymDate(Date.parse(anyP.created_at));
+  if (!anyP.entry_type && entryType) anyP.entry_type = entryType;
+  return p;
+}
+
 function syncMemberExpiries() {
   const todayStr = getTodayStr();
   members.forEach(m => {
@@ -2409,7 +2420,7 @@ function processMemberActivation(targetId: string, payload: any, res: express.Re
 
   const payId = `pay_${Date.now()}`;
   const activator = profiles.find(p => p.id === actorId) || profiles.find(p => p.id === member.onboarded_by);
-  paymentHistory.unshift({
+  paymentHistory.unshift(normPayment({
     id: payId,
     member_id: member.id,
     amount: paidVal,
@@ -2419,7 +2430,7 @@ function processMemberActivation(targetId: string, payload: any, res: express.Re
     received_by: activator ? activator.id : member.onboarded_by,
     received_by_name: activator ? activator.full_name : member.trainer_name,
     created_at: new Date().toISOString()
-  });
+  }, 'new'));
 
   // Always write commission settlement row on activate (payroll truth)
   recordCommissionSettlementOnPayment(payId, member, paidVal, `Activation commission (${pkg})`);
@@ -2493,7 +2504,7 @@ app.post('/api/members/:id/payment', (req, res) => {
     created_at: new Date().toISOString()
   };
 
-  paymentHistory.unshift(payRecord);
+  paymentHistory.unshift(normPayment(payRecord, 'balance'));
 
   // Write commission settlement row on payment
   recordCommissionSettlementOnPayment(payId, member, payVal, `Balance payment commission (${member.package_type})`);
@@ -2565,7 +2576,7 @@ app.post('/api/members/:id/renew', (req, res) => {
 
   const payId = `pay_${Date.now()}`;
   const renewer = profiles.find(p => p.id === renewed_by) || profiles[0];
-  paymentHistory.unshift({
+  paymentHistory.unshift(normPayment({
     id: payId,
     member_id: member.id,
     amount: newPaidVal,
@@ -2575,7 +2586,7 @@ app.post('/api/members/:id/renew', (req, res) => {
     received_by: renewer.id,
     received_by_name: renewer.full_name,
     created_at: new Date().toISOString()
-  });
+  }, 'renewal'));
 
   // Always write commission settlement row on renewal (payroll truth)
   recordCommissionSettlementOnPayment(payId, member, newPaidVal, `Renewal commission (${pkg} - ${months}m)`);
@@ -3328,7 +3339,7 @@ app.post('/api/payments', (req, res) => {
     created_at: new Date().toISOString()
   };
 
-  paymentHistory.unshift(payRecord);
+  paymentHistory.unshift(normPayment(payRecord, undefined));
   recordCommissionSettlementOnPayment(payId, member, payVal, `Payment top-up settlement`);
 
   res.status(201).json({ success: true, payment: payRecord, member });
@@ -4473,7 +4484,7 @@ app.post('/api/rpc/:fn', (req, res) => {
       let monthTotal = 0;
 
       for (const p of relevantPayments) {
-        const pDate = p.entry_date || p.created_at.slice(0, 10);
+        const pDate = p.entry_date || gymDate(Date.parse(p.created_at));
         const amt = Number(p.amount) || 0;
         if (pDate === targetDay) {
           dayTotal += amt;
@@ -4498,7 +4509,7 @@ app.post('/api/rpc/:fn', (req, res) => {
       const targetDay = p_day || getTodayStr();
 
       let dayPayments = paymentHistory.filter(p => {
-        const pDate = p.entry_date || p.created_at.slice(0, 10);
+        const pDate = p.entry_date || gymDate(Date.parse(p.created_at));
         if (pDate !== targetDay) return false;
         if (p_branch_id && p_branch_id !== 'all' && p.branch_id !== p_branch_id) return false;
         return true;
@@ -4857,7 +4868,7 @@ app.post('/api/rpc/:fn', (req, res) => {
           received_by_name: 'Bipin Amrutha',
           created_at: new Date().toISOString()
         };
-        paymentHistory.unshift(payRecord);
+        paymentHistory.unshift(normPayment(payRecord, undefined));
 
         // Commission & Winback triggers
         if (amount > 0) {
@@ -5282,7 +5293,7 @@ app.post('/api/rpc/:fn', (req, res) => {
           created_at: new Date().toISOString()
         };
 
-        paymentHistory.unshift(payRecord);
+        paymentHistory.unshift(normPayment(payRecord, undefined));
         if (amt > 0) {
           recordCommissionSettlementOnPayment(payId, targetMember, amt, `Bulk Payment Import [${etype}]`);
         }
@@ -5435,7 +5446,7 @@ app.get('/api/sales-totals', (req, res) => {
   let monthTotal = 0;
 
   for (const p of relevantPayments) {
-    const pDate = p.entry_date || p.created_at.slice(0, 10);
+    const pDate = p.entry_date || gymDate(Date.parse(p.created_at));
     const amt = Number(p.amount) || 0;
     if (pDate === targetDay) {
       dayTotal += amt;
@@ -5461,7 +5472,7 @@ app.get('/api/shift-close-totals', (req, res) => {
   const targetDay = (typeof day === 'string' && day) ? day : getTodayStr();
 
   const dayPayments = paymentHistory.filter(p => {
-    const pDate = p.entry_date || p.created_at.slice(0, 10);
+    const pDate = p.entry_date || gymDate(Date.parse(p.created_at));
     if (pDate !== targetDay) return false;
     if (branch_id && branch_id !== 'all' && p.branch_id !== branch_id) return false;
     return true;
@@ -5635,7 +5646,7 @@ app.get('/api/day-register', (req, res) => {
 
   // Find all payment records on target date
   let dayPayments = paymentHistory.filter(p => {
-    const pDate = p.entry_date || p.created_at.slice(0, 10);
+    const pDate = p.entry_date || gymDate(Date.parse(p.created_at));
     return pDate === targetDate;
   });
 
@@ -5665,7 +5676,7 @@ app.get('/api/day-register', (req, res) => {
       list_price: p.list_price,
       balance_after: p.balance_after !== undefined ? p.balance_after : (mem?.balance_due || 0),
       notes: p.notes,
-      entry_date: p.entry_date || p.created_at.slice(0, 10),
+      entry_date: p.entry_date || gymDate(Date.parse(p.created_at)),
       branch_id: p.branch_id || mem?.branch_id,
       branch_name: branch?.name || mem?.branch_name,
       created_at: p.created_at
@@ -6484,7 +6495,7 @@ app.post('/api/autodebit/charge-mandate', (req, res) => {
     created_at: new Date().toISOString(),
   };
 
-  paymentHistory.unshift(paymentRecord);
+  paymentHistory.unshift(normPayment(paymentRecord, undefined));
 
   // Write commission settlement row on successful auto-debit
   recordCommissionSettlementOnPayment(paymentRecord.id, member, chargeAmount, 'UPI AutoPay Recurring Charge');
@@ -7102,6 +7113,7 @@ persistence = makeStore({
   },
 });
 persistence.load();
+paymentHistory.forEach((p) => normPayment(p));
 seedPins();
 getSessionSecret();
 getSecretsKey();
