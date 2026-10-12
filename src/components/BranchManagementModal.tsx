@@ -161,7 +161,7 @@ export const BranchManagementModal: React.FC<BranchManagementModalProps> = ({
                     <button
                       type="button"
                       onClick={() => setShowAddForm(false)}
-                      className="text-zinc-500 hover:text-zinc-300 text-xs font-bold"
+                      className="text-zinc-400 hover:text-zinc-300 text-xs font-bold"
                     >
                       Cancel
                     </button>
@@ -303,22 +303,22 @@ export const BranchManagementModal: React.FC<BranchManagementModalProps> = ({
 
                           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-zinc-400 pt-1">
                             <div className="flex items-center space-x-1">
-                              <MapPin className="w-3.5 h-3.5 text-zinc-500" />
+                              <MapPin className="w-3.5 h-3.5 text-zinc-400" />
                               <span>{b.city} — {b.address}</span>
                             </div>
                             <div className="flex items-center space-x-1">
-                              <Phone className="w-3.5 h-3.5 text-zinc-500" />
+                              <Phone className="w-3.5 h-3.5 text-zinc-400" />
                               <span>{b.phone}</span>
                             </div>
                             {b.email && (
                               <div className="flex items-center space-x-1">
-                                <Mail className="w-3.5 h-3.5 text-zinc-500" />
+                                <Mail className="w-3.5 h-3.5 text-zinc-400" />
                                 <span>{b.email}</span>
                               </div>
                             )}
                             {b.gst_number && (
                               <div className="flex items-center space-x-1">
-                                <FileText className="w-3.5 h-3.5 text-zinc-500" />
+                                <FileText className="w-3.5 h-3.5 text-zinc-400" />
                                 <span className="font-mono text-[11px]">GST: {b.gst_number}</span>
                               </div>
                             )}
@@ -356,7 +356,7 @@ export const BranchManagementModal: React.FC<BranchManagementModalProps> = ({
 
         {/* Footer */}
         <div className="p-4 bg-zinc-950 border-t border-zinc-800 flex items-center justify-between">
-          <div className="flex items-center space-x-2 text-xs text-zinc-500">
+          <div className="flex items-center space-x-2 text-xs text-zinc-400">
             <ShieldCheck className="w-4 h-4 text-emerald-400" />
             <span>Multi-Tenant Data Isolation Active</span>
           </div>

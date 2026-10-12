@@ -130,7 +130,7 @@ export const CheckInPanel: React.FC<{ branchId?: string }> = ({ branchId }) => {
         </div>
         <canvas ref={canvasRef} className="hidden" />
         {camState === 'error' && <p role="alert" className="text-xs text-amber-300 bg-amber-950/40 border border-amber-800/60 rounded-xl p-2">{camError}</p>}
-        {camState === 'off' && <p className="text-xs text-zinc-500">Point the camera at the QR in the member’s Pulse app (Digital Pass tab).</p>}
+        {camState === 'off' && <p className="text-xs text-zinc-400">Point the camera at the QR in the member’s Pulse app (Digital Pass tab).</p>}
       </div>
 
       <form onSubmit={onManual} className="flex gap-2">
@@ -167,12 +167,12 @@ export const CheckInPanel: React.FC<{ branchId?: string }> = ({ branchId }) => {
       <div className="space-y-2">
         <h3 className="text-xs font-bold uppercase tracking-wide text-zinc-400">Today’s check-ins {today ? `(${today.length})` : ''}</h3>
         {todayError ? <p role="alert" className="text-xs text-red-300">Couldn’t load today’s check-ins: {todayError} <button className="underline" onClick={loadToday}>Retry</button></p> :
-          today === null ? <p className="text-xs text-zinc-500">Loading…</p> :
-          today.length === 0 ? <p className="text-xs text-zinc-500">No check-ins yet today.</p> : (
+          today === null ? <p className="text-xs text-zinc-400">Loading…</p> :
+          today.length === 0 ? <p className="text-xs text-zinc-400">No check-ins yet today.</p> : (
           <ul className="divide-y divide-zinc-800 rounded-xl border border-zinc-800 max-h-64 overflow-auto">
             {today.slice(0, 100).map((a) => (
               <li key={a.id} className="px-3 py-2 flex justify-between text-xs"><span className="text-zinc-200 truncate">{a.member_name}</span>
-                <span className="text-zinc-500 shrink-0 ml-2">{new Date(a.checked_in_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })} · {a.method}</span></li>
+                <span className="text-zinc-400 shrink-0 ml-2">{new Date(a.checked_in_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })} · {a.method}</span></li>
             ))}
           </ul>
         )}

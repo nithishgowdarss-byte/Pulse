@@ -63,6 +63,7 @@ import { createSqliteStore } from './src/server/sqliteStore';
 import { bodyValidator } from './src/server/validation';
 import { createVault, getSecretsKey, SealedSecret } from './src/server/secrets';
 import { issuePass, verifyPass } from './src/server/memberPass';
+import { registerRound3, round3EntityBranch, Round3Deps, Expense, RenewRequest, PrivacyRequest, Consent } from './src/server/round3';
 import {
   hashPin, verifyPin, isValidPinFormat, encodeSession, sessionCookie, clearSessionCookie,
   loginThrottle, createAuthMiddleware, getSessionSecret, Session, readSession,
@@ -180,6 +181,7 @@ app.use(
       const mb = (id?: string) => (id ? members.find((m) => m.id === id)?.branch_id : undefined);
       let m: RegExpMatchArray | null;
       if ((m = p.match(/^\/api\/freeze-requests\/([^/]+)$/))) { const r = freezeRequests.find((x) => x.id === m![1]); return r ? r.branch_id || mb(r.member_id) || '' : undefined; }
+      { const r3 = round3EntityBranch(round3Deps, p); if (r3 !== undefined) return r3; }
       if ((m = p.match(/^\/api\/pt-packages\/([^/]+)(\/.*)?$/))) { const r = ptPackages.find((x) => x.id === m![1]); return r ? r.branch_id : ''; }
       if ((m = p.match(/^\/api\/leads\/([^/]+)(\/convert)?$/))) { const r = leads.find((x) => x.id === m![1]); return r ? r.branch_id || '' : undefined; }
       if ((m = p.match(/^\/api\/retention\/alerts\/([^/]+)\/resolve$/))) { const r = retentionAlerts.find((x) => x.id === m![1]); return r ? r.branch_id || mb(r.member_id) || '' : undefined; }
@@ -394,10 +396,13 @@ function getTodayStr(): string {
   return gymDate();
 }
 
-function addMonthsToDate(dateStr: string, months: number): string {
-  const d = new Date(dateStr);
-  d.setMonth(d.getMonth() + months);
-  return d.toISOString().slice(0, 10);
+export function addMonthsToDate(dateStr: string, months: number): string {
+  // Calendar-month add with end-of-month clamp (Jan 31 + 1 → Feb 28/29), timezone-independent.
+  const [y, m, dd] = String(dateStr).slice(0, 10).split('-').map(Number);
+  if (!y || !m || !dd) { const d = new Date(dateStr); d.setUTCMonth(d.getUTCMonth() + months); return d.toISOString().slice(0, 10); }
+  const total = (m - 1) + months; const ny = y + Math.floor(total / 12); const nm = ((total % 12) + 12) % 12;
+  const last = new Date(Date.UTC(ny, nm + 1, 0)).getUTCDate();
+  return `${ny}-${String(nm + 1).padStart(2, '0')}-${String(Math.min(dd, last)).padStart(2, '0')}`;
 }
 
 export interface StaffAttendanceRecord {
@@ -444,6 +449,10 @@ interface PtPackage {
   purchased_at: string; expires_on?: string; notes?: string; sessions: PtSession[]; created_by: string;
 }
 let ptPackages: PtPackage[] = [];
+let expenses: Expense[] = [];
+let renewRequests: RenewRequest[] = [];
+let privacyRequests: PrivacyRequest[] = [];
+let consents: Record<string, Consent> = {};
 let balanceReminderSettings: Record<string, BalanceReminderSettings> = {
   'br_nag_1': {
     branch_id: 'br_nag_1',
@@ -864,11 +873,8 @@ function convertWinbackEnrollmentOnPayment(memberId: string) {
 }
 
 // Indian Standard Time (IST UTC+5:30) Silence Hours Check: 21:00 - 08:00
-function inSilenceHoursIST(): boolean {
-  const now = new Date();
-  const utcMs = now.getTime() + (now.getTimezoneOffset() * 60000);
-  const istTime = new Date(utcMs + (3600000 * 5.5));
-  const istHour = istTime.getHours();
+export function inSilenceHoursIST(): boolean {
+  const istHour = new Date(Date.now() + 5.5 * 3600e3).getUTCHours();
   return istHour >= 21 || istHour < 8;
 }
 
@@ -2384,7 +2390,7 @@ function processMemberActivation(targetId: string, payload: any, res: express.Re
   const noteText = notes || p_notes;
   const actorId = activated_by || p_actor_id;
 
-  const months = subMonths ? parseInt(String(subMonths)) : 1;
+  const months = subMonths !== undefined && subMonths !== '' ? Number(subMonths) : 1;
   const pkg: PlanPackage = pkgType || 'General Gym';
   const pkgConfig = PACKAGE_CONFIGS[pkg] || PACKAGE_CONFIGS['General Gym'];
 
@@ -2536,7 +2542,7 @@ app.post('/api/members/:id/renew', (req, res) => {
     return res.status(404).json({ error: 'Member not found' });
   }
 
-  const months = subscription_months ? parseInt(subscription_months) : 1;
+  const months = subscription_months !== undefined && subscription_months !== '' ? Number(subscription_months) : 1;
   const pkg: PlanPackage = package_type || member.package_type || 'General Gym';
   const pkgConfig = PACKAGE_CONFIGS[pkg] || PACKAGE_CONFIGS['General Gym'];
 
@@ -2640,7 +2646,7 @@ app.post('/api/members/bulk-update', (req, res) => {
 // Soft Archive Member
 app.post('/api/members/:id/archive', (req, res) => {
   const { id } = req.params;
-  const { archived_by } = req.body;
+  const archived_by = (req as any).auth?.session?.id || 'unknown';
 
   const member = members.find(m => m.id === id);
   if (!member) {
@@ -2649,7 +2655,7 @@ app.post('/api/members/:id/archive', (req, res) => {
 
   member.is_archived = true;
   member.archived_at = new Date().toISOString();
-  member.archived_by = archived_by || 'usr_owner_1';
+  member.archived_by = archived_by;
   member.updated_at = new Date().toISOString();
 
   res.json(member);
@@ -2742,6 +2748,7 @@ app.post('/api/attendance/check-in', (req, res) => {
     if (!member) {
       const digits = key.replace(/\D/g, '').slice(-10);
       const hits = digits.length === 10 ? members.filter(m => m.phone === digits && !m.is_archived) : [];
+      if (!hits.length && digits.length === 10 && members.some(m => m.phone === digits && m.is_archived)) return res.status(409).json({ error: 'Cannot check in an archived member. Please restore member first.', code: 'ARCHIVED' });
       if (hits.length > 1) return res.status(409).json({ error: `${hits.length} members share this phone (${hits.map(h => h.full_name).join(', ')}). Scan their QR or pick from the list.`, code: 'AMBIGUOUS_PHONE', candidates: hits.map(h => ({ id: h.id, full_name: h.full_name })) });
       member = hits[0];
     }
@@ -2761,6 +2768,10 @@ app.post('/api/attendance/check-in', (req, res) => {
   }
   const today = getTodayStr();
   const expired = member.status === 'expired' || (!!member.end_date && member.end_date < today);
+  const fz = (member as any).freeze_info;
+  if (fz?.is_frozen && fz.freeze_start <= today && today <= fz.freeze_end && !override) {
+    return res.status(409).json({ error: `${member.full_name}'s membership is frozen until ${fz.freeze_end}. Use override for a one-time entry.`, code: 'MEMBERSHIP_FROZEN', member });
+  }
   if (member.status === 'cancelled' || member.status === 'pending') {
     if (!override) return res.status(409).json({ error: `${member.full_name}'s membership is ${member.status}. Activate it before check-in.`, code: 'MEMBERSHIP_INACTIVE', member });
   }
@@ -2829,7 +2840,7 @@ app.post('/api/pt-packages', (req, res) => {
   if (!Number.isInteger(total) || total < 1 || total > 200) return res.status(400).json({ error: 'Sessions must be a whole number between 1 and 200' });
   const amt = price === undefined || price === '' ? 0 : Number(price);
   if (!Number.isFinite(amt) || amt < 0 || amt > 1000000) return res.status(400).json({ error: 'Price must be between ₹0 and ₹10,00,000' });
-  if (expires_on !== undefined && expires_on !== '' && (typeof expires_on !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(expires_on) || isNaN(Date.parse(expires_on)))) return res.status(400).json({ error: 'Expiry must be a valid date (YYYY-MM-DD)' });
+  if (expires_on !== undefined && expires_on !== '' && (typeof expires_on !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(expires_on) || isNaN(Date.parse(expires_on)) || new Date(expires_on + 'T00:00:00Z').toISOString().slice(0, 10) !== expires_on)) return res.status(400).json({ error: 'Expiry must be a valid date (YYYY-MM-DD)' });
   if (expires_on && expires_on < getTodayStr()) return res.status(400).json({ error: 'Expiry date is in the past' });
   const actor = (req as any).auth?.session?.id || 'system';
   const pkg: PtPackage = {
@@ -2865,6 +2876,19 @@ app.delete('/api/pt-packages/:id/sessions/:sid', (req, res) => {
   if (pkg.sessions.length === before) return res.status(404).json({ error: 'Session not found' });
   res.json({ package: ptView(pkg) });
 });
+
+// ---------- Round 3: backup/restore, privacy, expenses, renew requests, reports ----------
+var round3Deps: Round3Deps = {
+  state: () => ({ expenses, renewRequests, privacyRequests, consents }),
+  members: () => members, profiles: () => profiles, branches: () => branches, payments: () => paymentHistory, attendance: () => attendanceLogs,
+  measurements: () => measurements, freezeRequests: () => freezeRequests, ptPackages: () => ptPackages, pinHashes: () => pinHashes,
+  audit: (e) => auditLogs.unshift({ id: `aud_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`, created_at: new Date().toISOString(), user_name: profiles.find(p => p.id === e.actor_id)?.full_name || members.find(m => m.id === e.actor_id)?.full_name || e.actor_id, ...e } as any),
+  gymDate: (ms?: number) => gymDate(ms),
+  get store() { return persistence; },
+  get dataDir() { return process.env.DATA_DIR || (isProduction() ? '/data' : path.join(process.cwd(), '.data')); },
+  markDirty: () => persistence?.markDirty(),
+} as any;
+registerRound3(app, round3Deps);
 
 // Staff Attendance REST Endpoints
 app.get('/api/staff-attendance', (req, res) => {
@@ -2975,6 +2999,11 @@ app.post('/api/retention/flag-stale', (req, res) => {
     return res.json({ success: true, alert: existing, note: 'Alert already open' });
   }
 
+  let daysSince = Number(days_since);
+  if (!Number.isFinite(daysSince) || daysSince < 0) {
+    const last = attendanceLogs.filter((a: any) => a.member_id === mem.id).map((a: any) => String(a.checked_in_at || '')).sort().pop();
+    daysSince = last ? Math.max(0, Math.floor((Date.now() - new Date(last).getTime()) / 86400000)) : 999;
+  }
   const alertId = `alt_stale_${Date.now()}`;
   const newAlert: RetentionAlert = {
     id: alertId,
@@ -2982,7 +3011,7 @@ app.post('/api/retention/flag-stale', (req, res) => {
     branch_id: branch_id || mem.branch_id,
     alert_type: 'at_risk',
     severity: 'high',
-    message: `No check-in for ${days_since >= 999 ? '14+' : days_since} days · Retention Action Required`,
+    message: `No check-in for ${daysSince >= 999 ? '14+' : daysSince} days · Retention Action Required`,
     is_resolved: false,
     created_at: new Date().toISOString()
   };
@@ -3242,12 +3271,20 @@ app.get('/api/audit-logs', (req, res) => {
     list = list.filter(l => !l.branch_id || l.branch_id === branch_id);
   }
   list.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-  res.json(list);
+  res.json(list.map((l: any) => {
+    const uid = l.user_id || l.actor_id;
+    const prof = uid ? profiles.find(p => p.id === uid) : undefined;
+    const mem = !prof && uid ? members.find(m => m.id === uid) : undefined;
+    return { ...l, user_id: uid, user_name: l.user_name || prof?.full_name || mem?.full_name || 'System', user_role: l.user_role || prof?.role || (mem ? 'member' : 'system') };
+  }));
 });
 
 app.post('/api/audit-logs', (req, res) => {
-  const { action, user_id, user_name, entity_type, entity_id, branch_id, details } = req.body;
-  const user = profiles.find(p => p.id === user_id) || profiles[0];
+  const { action, entity_type, entity_id, branch_id, details } = req.body || {};
+  // The actor is always the signed-in user; user_id/user_name in the body are ignored (no spoofed audit entries).
+  const sid = (req as any).auth?.session?.id;
+  const user: any = profiles.find(p => p.id === sid) || { id: sid || 'unknown', full_name: actorName(req), role: (req as any).auth?.session?.role || 'unknown' };
+  const user_name = undefined;
   const newLog: AuditLog = {
     id: `aud_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
     action: action || 'Action recorded',
@@ -3632,7 +3669,7 @@ app.post('/api/winback/enroll', (req, res) => {
   const mem = members.find(m => m.id === member_id);
   if (!mem) return res.status(404).json({ error: 'Member not found' });
 
-  const camp = winbackCampaigns.find(c => c.id === campaign_id) || winbackCampaigns[0];
+  const camp = campaign_id ? winbackCampaigns.find(c => c.id === campaign_id) : winbackCampaigns[0];
   if (!camp) return res.status(404).json({ error: 'Campaign not found' });
 
   let existing = winbackEnrollments.find(e => e.campaign_id === camp.id && e.member_id === mem.id);
@@ -3668,7 +3705,7 @@ app.post('/api/winback/enroll', (req, res) => {
 // 7. Orchestrated Campaign Execution Engine (Daily Cron & On-Demand Run)
 app.post('/api/winback/run', (req, res) => {
   const { campaign_id, force_bypass_silence } = req.body;
-  const camp = winbackCampaigns.find(c => c.id === campaign_id) || winbackCampaigns[0];
+  const camp = campaign_id ? winbackCampaigns.find(c => c.id === campaign_id) : winbackCampaigns[0];
   if (!camp || !camp.is_active) {
     return res.status(400).json({ error: 'Active campaign not found' });
   }
@@ -4217,10 +4254,16 @@ app.post('/api/rpc/:fn', (req, res) => {
 
   switch (fn) {
     case 'staff_check_in': {
-      const { p_staff_id, p_branch_id, p_method, p_notes, p_actor_id } = body;
-      const targetId = p_staff_id || body.staff_id || 'usr_trainer_1';
+      const { p_branch_id, p_method, p_notes } = body;
+      const sess = (req as any).auth?.session; const ownerish = sess && ['owner', 'super_owner'].includes(sess.role);
+      const targetId = ownerish ? (body.p_staff_id || body.staff_id || sess.id) : sess?.id;
+      const p_actor_id = sess?.id;
       const staffProf = profiles.find(p => p.id === targetId);
-      const targetBranchId = p_branch_id || staffProf?.branch_id || 'br_nag_1';
+      if (!staffProf) return res.status(404).json({ error: 'Staff member not found.', code: 'STAFF_NOT_FOUND' });
+      const targetBranchId = p_branch_id || staffProf.branch_id;
+      if (!branches.some(b => b.id === targetBranchId)) return res.status(400).json({ error: 'Unknown branch.', code: 'VALIDATION' });
+      const scopeIds: string[] | undefined = (req as any).auth?.branchIds;
+      if (scopeIds && !scopeIds.includes(targetBranchId)) return res.status(403).json({ error: 'You can only check in at your own branch.', code: 'FORBIDDEN_BRANCH' });
 
       // One open shift per staff rule
       const existingOpen = staffAttendanceLogs.find(s => s.staff_id === targetId && !s.checked_out_at);
@@ -4255,8 +4298,9 @@ app.post('/api/rpc/:fn', (req, res) => {
     }
 
     case 'staff_check_out': {
-      const { p_staff_id, p_notes } = body;
-      const targetId = p_staff_id || body.staff_id || 'usr_trainer_1';
+      const { p_notes } = body;
+      const sess2 = (req as any).auth?.session; const ownerish2 = sess2 && ['owner', 'super_owner'].includes(sess2.role);
+      const targetId = ownerish2 ? (body.p_staff_id || body.staff_id || sess2.id) : sess2?.id;
       const openShift = staffAttendanceLogs.find(s => s.staff_id === targetId && !s.checked_out_at);
       if (!openShift) {
         return res.status(400).json({
@@ -4676,7 +4720,8 @@ app.post('/api/rpc/:fn', (req, res) => {
       const todayStr = getTodayStr();
       const amount = p_entry_type === 'freeze' ? 0 : Math.max(0, Number(p_amount) || 0);
       const listPrice = p_list_price !== undefined && p_list_price !== '' ? Math.max(0, Number(p_list_price)) : null;
-      const months = Math.max(1, Number(p_months) || 1);
+      const months = p_months === undefined || p_months === '' ? 1 : Number(p_months);
+      if (!Number.isInteger(months) || months < 1 || months > 36) return res.status(400).json({ error: 'months must be a whole number 1–36.', code: 'VALIDATION' });
       // Freeze length is FIXED at exactly 30 days (1 month) for annual members
       const freezeDays = p_entry_type === 'freeze' ? 30 : Math.max(1, Math.min(90, Number(p_freeze_days) || 15));
 
@@ -5713,7 +5758,8 @@ app.get('/api/day-register', (req, res) => {
 // Cross-Branch Member Transfer
 app.post('/api/members/:id/transfer', (req, res) => {
   const { id } = req.params;
-  const { new_branch_id, transferred_by, reason } = req.body;
+  const { new_branch_id, reason } = req.body || {};
+  const transferred_by = (req as any).auth?.session?.id || 'unknown';
 
   const member = members.find(m => m.id === id);
   if (!member) {
@@ -5738,16 +5784,16 @@ app.post('/api/members/:id/transfer', (req, res) => {
     type: 'stage_change',
     title: '🏢 Branch Transfer Completed',
     description: `Transferred from ${oldBranchName} to ${targetBranch.name}. Reason: ${reason || 'Customer request'}.`,
-    actor_name: transferred_by || 'Gym Management',
+    actor_name: actorName(req),
     created_at: new Date().toISOString()
   });
 
   // Log Audit
   auditLogs.unshift({
     id: `aud_${Date.now()}`,
-    user_id: transferred_by || 'usr_owner_1',
-    user_name: 'Management',
-    user_role: 'owner',
+    user_id: transferred_by,
+    user_name: actorName(req),
+    user_role: (req as any).auth?.session?.role || 'unknown',
     action: 'MEMBER_TRANSFERRED',
     entity_type: 'member',
     entity_id: member.id,
@@ -5763,12 +5809,15 @@ app.post('/api/members/:id/transfer', (req, res) => {
 // Member Freeze / Pause Membership
 app.post('/api/members/:id/freeze', (req, res) => {
   const { id } = req.params;
-  const { start_date, end_date, reason, frozen_by } = req.body;
+  const { start_date, end_date, reason } = req.body || {};
 
   const member = members.find(m => m.id === id);
   if (!member) {
     return res.status(404).json({ error: 'Member not found' });
   }
+  const frozen_by = actorName(req);
+  const fv = validateFreeze(member, start_date, end_date);
+  if (fv) return res.status(400).json(fv);
 
   member.freeze_info = {
     is_frozen: true,
@@ -5823,8 +5872,18 @@ app.post('/api/leads', (req, res) => {
     return res.status(400).json({ error: 'Lead full name and phone number are required.' });
   }
 
-  const cleanPhone = phone.replace(/\D/g, '').slice(-10);
-  const branch = branches.find(b => b.id === branch_id) || branches[0];
+  const LEAD_SOURCES = ['Instagram', 'Facebook', 'Google', 'Walk-in', 'Referral', 'Website', 'Campaign'];
+  const LEAD_STATUSES = ['Cold', 'Warm', 'Hot', 'Converted', 'Lost'];
+  const normKey = (v: any) => String(v).toLowerCase().replace(/[^a-z]/g, '');
+  const srcMatch = source === undefined || source === '' ? undefined : LEAD_SOURCES.find(x => normKey(x) === normKey(source));
+  if (source !== undefined && source !== '' && !srcMatch) return res.status(400).json({ error: `Unknown lead source. Use one of: ${LEAD_SOURCES.join(', ')}.`, code: 'VALIDATION' });
+  if (status !== undefined && status !== '' && !LEAD_STATUSES.includes(status)) return res.status(400).json({ error: `Unknown lead status. Use one of: ${LEAD_STATUSES.join(', ')}.`, code: 'VALIDATION' });
+  if (branch_id !== undefined && branch_id !== '' && !branches.some(b => b.id === branch_id)) return res.status(400).json({ error: 'Unknown branch.', code: 'VALIDATION' });
+  if (assigned_trainer_id && !profiles.some(p => p.id === assigned_trainer_id)) return res.status(400).json({ error: 'Unknown trainer.', code: 'VALIDATION' });
+  const cleanPhone = String(phone).replace(/\D/g, '').slice(-10);
+  if (!/^[6-9]\d{9}$/.test(cleanPhone)) return res.status(400).json({ error: 'Enter a valid 10-digit mobile number.', code: 'INVALID_PHONE' });
+  const scopeIds: string[] | undefined = (req as any).auth?.branchIds;
+  const branch = branches.find(b => b.id === branch_id) || branches.find(b => !scopeIds || scopeIds.includes(b.id)) || branches[0];
   const trainer = profiles.find(p => p.id === assigned_trainer_id);
 
   const newLead: Lead = {
@@ -5832,7 +5891,7 @@ app.post('/api/leads', (req, res) => {
     full_name: full_name.trim(),
     phone: cleanPhone,
     email: email ? email.trim() : undefined,
-    source: source || 'Walk-in',
+    source: (srcMatch || 'Walk-in') as any,
     status: status || 'Cold',
     interested_plan: interested_plan || 'General Gym',
     budget: budget ? parseFloat(budget) : undefined,
@@ -5858,6 +5917,7 @@ app.put('/api/leads/:id', (req, res) => {
   }
 
   const { status, follow_up_date, notes, assigned_trainer_id } = req.body;
+  if (status !== undefined && !['Cold', 'Warm', 'Hot', 'Converted', 'Lost'].includes(status)) return res.status(400).json({ error: 'Unknown lead status.', code: 'VALIDATION' });
   if (status) lead.status = status;
   if (follow_up_date !== undefined) lead.follow_up_date = follow_up_date;
   if (notes !== undefined) lead.notes = notes;
@@ -5879,6 +5939,9 @@ app.post('/api/leads/:id/convert', (req, res) => {
   const lead = leads.find(l => l.id === id);
   if (!lead) {
     return res.status(404).json({ error: 'Lead not found' });
+  }
+  if (lead.status === 'Converted') {
+    return res.status(409).json({ error: 'Lead is already converted', code: 'ALREADY_CONVERTED' });
   }
 
   lead.status = 'Converted';
@@ -6056,6 +6119,22 @@ app.get('/api/freeze-requests', (req, res) => {
   res.json(freezeRequests);
 });
 
+function validateFreeze(member: any, start_date: any, end_date: any): { error: string; code: string } | null {
+  const DATE = /^\d{4}-\d{2}-\d{2}$/;
+  if (!DATE.test(String(start_date)) || !DATE.test(String(end_date)) || isNaN(Date.parse(start_date)) || isNaN(Date.parse(end_date))) return { error: 'Start and end dates (YYYY-MM-DD) are required.', code: 'VALIDATION' };
+  const subMonths = Number(member.subscription_months || 0);
+  const pkg = String(member.package_type || '').toLowerCase();
+  if (!(subMonths === 12 || /annual|year|yearly|12\s*month/.test(pkg))) return { error: 'Membership freeze is strictly reserved for 12-month / Annual members only.', code: 'FREEZE_ANNUAL_ONLY' };
+  const diffDays = Math.round((Date.parse(end_date) - Date.parse(start_date)) / 864e5);
+  if (diffDays > 30 || diffDays < 1) return { error: 'Freeze duration cannot exceed 30 calendar days (1 month).', code: 'FREEZE_MAX_30_DAYS' };
+  return null;
+}
+/** Display name of the signed-in user (never trust actor fields in the body). */
+function actorName(req: any): string {
+  const s = req.auth?.session; if (!s) return 'Staff';
+  return profiles.find(p => p.id === s.id)?.full_name || members.find(m => m.id === s.id)?.full_name || s.id;
+}
+
 app.post('/api/freeze-requests', (req, res) => {
   const { member_id, member_name, start_date, end_date, reason } = req.body;
   if (!member_id || !start_date || !end_date || !reason) {
@@ -6108,18 +6187,24 @@ app.post('/api/freeze-requests', (req, res) => {
 
 app.put('/api/freeze-requests/:id', (req, res) => {
   const { id } = req.params;
-  const { status } = req.body; // 'approved' | 'rejected'
+  const { status } = req.body || {}; // 'approved' | 'rejected'
 
   const freq = freezeRequests.find(r => r.id === id);
   if (!freq) {
     return res.status(404).json({ error: 'Freeze request not found' });
   }
+  if (!['approved', 'rejected'].includes(status)) return res.status(400).json({ error: "status must be 'approved' or 'rejected'", code: 'VALIDATION' });
+  if (freq.status !== 'pending') return res.status(409).json({ error: `This request is already ${freq.status}.`, code: 'ALREADY_RESOLVED' });
 
   freq.status = status;
+  (freq as any).resolved_by = (req as any).auth?.session?.id; (freq as any).resolved_at = new Date().toISOString();
 
   if (status === 'approved') {
     const member = members.find(m => m.id === freq.member_id);
     if (member) {
+      // Paid days are not lost: push the end date out by the frozen days.
+      const days = Math.max(0, Math.round((Date.parse(freq.end_date) - Date.parse(freq.start_date)) / 864e5));
+      if (member.end_date && days > 0) member.end_date = new Date(Date.parse(member.end_date) + days * 864e5).toISOString().slice(0, 10);
       member.freeze_info = {
         is_frozen: true,
         freeze_start: freq.start_date,
@@ -6134,7 +6219,7 @@ app.put('/api/freeze-requests/:id', (req, res) => {
         type: 'freeze',
         title: '❄️ Membership Freeze Approved',
         description: `Approved pause from ${freq.start_date} to ${freq.end_date}. Reason: ${freq.reason}`,
-        actor_name: 'Branch Manager / Owner',
+        actor_name: actorName(req),
         created_at: new Date().toISOString()
       });
     }
@@ -6341,7 +6426,9 @@ app.get('/api/retention/outreach-logs', (req, res) => {
 });
 
 app.post('/api/retention/send-outreach', (req, res) => {
-  const { alert_id, member_id, branch_id, channel, message_body, sender_id, sender_name } = req.body;
+  const { alert_id, member_id, branch_id, message_body, sender_id, sender_name } = req.body;
+  const channel: string = req.body.channel === undefined || req.body.channel === '' ? 'whatsapp' : req.body.channel;
+  if (channel !== 'whatsapp' && channel !== 'sms') return res.status(400).json({ error: 'Channel must be whatsapp or sms', code: 'VALIDATION' });
 
   if (!member_id || !message_body) {
     return res.status(400).json({ error: 'Member ID and message body are required' });
@@ -6353,8 +6440,7 @@ app.post('/api/retention/send-outreach', (req, res) => {
   }
 
   // Silence hours check (9 PM to 8 AM IST)
-  const currentHour = new Date().getHours();
-  const isSilenceHours = currentHour >= 21 || currentHour < 8;
+  const isSilenceHours = inSilenceHoursIST();
 
   const logRecord: RetentionOutreachLog = {
     id: `out_${Date.now()}`,
@@ -6714,12 +6800,11 @@ app.get('/api/freellmapi/status', (req, res) => {
 // 4. Update FreeLLMAPI Config / Keys
 app.post('/api/freellmapi/update-config', (req, res) => {
   const { provider, apiKey, model, enabled, priority } = req.body;
-  if (!provider || !PROVIDER_CATALOG[provider as LLMProviderId]) {
-    return res.status(400).json({ error: 'Invalid provider ID' });
-  }
-
   if (apiKey !== undefined && process.env.PULSE_ALLOW_RUNTIME_KEYS !== '1') {
     return res.status(403).json({ error: 'API keys must be configured via server environment variables', code: 'RUNTIME_KEYS_DISABLED' });
+  }
+  if (!provider || !PROVIDER_CATALOG[provider as LLMProviderId]) {
+    return res.status(400).json({ error: 'Invalid provider ID' });
   }
   if (model !== undefined && (typeof model !== 'string' || model.length > 120)) {
     return res.status(400).json({ error: 'Invalid model' });
@@ -7074,6 +7159,10 @@ persistence = makeStore({
     banners,
     secretVault,
     ptPackages,
+    expenses,
+    renewRequests,
+    privacyRequests,
+    consents,
   }),
   restore: (data: any) => {
     if (data.branches !== undefined) branches = data.branches;
@@ -7110,6 +7199,10 @@ persistence = makeStore({
     if (data.banners !== undefined) banners = data.banners;
     if (data.secretVault !== undefined) secretVault = data.secretVault;
     if (Array.isArray(data.ptPackages)) ptPackages = data.ptPackages;
+    if (Array.isArray(data.expenses)) expenses = data.expenses;
+    if (Array.isArray(data.renewRequests)) renewRequests = data.renewRequests;
+    if (Array.isArray(data.privacyRequests)) privacyRequests = data.privacyRequests;
+    if (data.consents && typeof data.consents === 'object') consents = data.consents;
   },
 });
 persistence.load();

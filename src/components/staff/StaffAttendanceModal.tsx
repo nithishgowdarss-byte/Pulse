@@ -236,7 +236,7 @@ export const StaffAttendanceModal: React.FC<StaffAttendanceModalProps> = ({
 
             <div className="bg-zinc-900/90 border border-zinc-800 rounded-xl p-3">
               <div className="text-[10px] uppercase font-bold text-zinc-400 flex items-center gap-1.5 mb-1">
-                <CheckCircle2 className="w-3 h-3 text-zinc-500" />
+                <CheckCircle2 className="w-3 h-3 text-zinc-400" />
                 Completed Today
               </div>
               <div className="text-2xl font-black text-zinc-300">{completedCount}</div>
@@ -246,7 +246,7 @@ export const StaffAttendanceModal: React.FC<StaffAttendanceModalProps> = ({
           {/* Filters */}
           <div className="md:col-span-8 flex flex-wrap items-center gap-3 justify-end">
             <div className="flex items-center gap-2 bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-1.5">
-              <Building2 className="w-4 h-4 text-zinc-500" />
+              <Building2 className="w-4 h-4 text-zinc-400" />
               <label htmlFor={branchSelectId} className="sr-only">Filter by branch</label>
               <select
                 id={branchSelectId}
@@ -264,7 +264,7 @@ export const StaffAttendanceModal: React.FC<StaffAttendanceModalProps> = ({
             </div>
 
             <div className="flex items-center gap-2 bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-1.5">
-              <Calendar className="w-4 h-4 text-zinc-500" />
+              <Calendar className="w-4 h-4 text-zinc-400" />
               <label htmlFor={dateInputId} className="sr-only">Select date</label>
               <input
                 id={dateInputId}
@@ -400,11 +400,11 @@ export const StaffAttendanceModal: React.FC<StaffAttendanceModalProps> = ({
                 <Clock className="w-4 h-4 text-red-500" />
                 <span>Shift Logs for {dayjs(selectedDay).format('D MMMM YYYY')}</span>
               </h3>
-              <span className="text-xs text-zinc-500">{logs.length} records</span>
+              <span className="text-xs text-zinc-400">{logs.length} records</span>
             </div>
 
             {logs.length === 0 ? (
-              <div className="text-center py-12 text-zinc-500 text-xs">
+              <div className="text-center py-12 text-zinc-400 text-xs">
                 No staff attendance records logged for {dayjs(selectedDay).format('D MMM YYYY')}.
               </div>
             ) : (
@@ -442,7 +442,7 @@ export const StaffAttendanceModal: React.FC<StaffAttendanceModalProps> = ({
                               </div>
                               <div>
                                 <div>{log.profiles?.full_name || 'Staff Member'}</div>
-                                <div className="text-[10px] text-zinc-500 capitalize">{log.profiles?.role || 'trainer'}</div>
+                                <div className="text-[10px] text-zinc-400 capitalize">{log.profiles?.role || 'trainer'}</div>
                               </div>
                             </div>
                           </td>
@@ -481,7 +481,7 @@ export const StaffAttendanceModal: React.FC<StaffAttendanceModalProps> = ({
                               </span>
                             ) : (
                               <span className="inline-flex items-center gap-1.5 text-zinc-400">
-                                <CheckCircle2 className="w-3.5 h-3.5 text-zinc-500" />
+                                <CheckCircle2 className="w-3.5 h-3.5 text-zinc-400" />
                                 Completed
                               </span>
                             )}
@@ -514,7 +514,7 @@ export const StaffAttendanceModal: React.FC<StaffAttendanceModalProps> = ({
 
         {/* Footer */}
         <div className="px-6 py-4 border-t border-zinc-800 bg-zinc-900/60 flex items-center justify-between shrink-0">
-          <div className="text-xs text-zinc-500">
+          <div className="text-xs text-zinc-400">
             Staff shifts are recorded with branch and timestamp audit trails.
           </div>
           <button

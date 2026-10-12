@@ -32,7 +32,7 @@ export const TrainerPerformanceSection: React.FC<TrainerPerformanceSectionProps>
             <TrendingUp className="w-4 h-4 text-emerald-400" />
           </div>
           <div className="text-2xl font-black font-mono text-white mt-2">{totalActivationsMtd}</div>
-          <p className="text-[10px] text-zinc-500 mt-0.5">Enrolled this calendar month</p>
+          <p className="text-[10px] text-zinc-400 mt-0.5">Enrolled this calendar month</p>
         </div>
 
         <div className="bg-zinc-900 border border-zinc-800 p-4 rounded-2xl">
@@ -41,7 +41,7 @@ export const TrainerPerformanceSection: React.FC<TrainerPerformanceSectionProps>
             <UserCheck className="w-4 h-4 text-blue-400" />
           </div>
           <div className="text-2xl font-black font-mono text-white mt-2">{totalActiveBook}</div>
-          <p className="text-[10px] text-zinc-500 mt-0.5">Assigned to floor trainers</p>
+          <p className="text-[10px] text-zinc-400 mt-0.5">Assigned to floor trainers</p>
         </div>
 
         <div className="bg-zinc-900 border border-zinc-800 p-4 rounded-2xl">
@@ -50,7 +50,7 @@ export const TrainerPerformanceSection: React.FC<TrainerPerformanceSectionProps>
             <CheckCircle2 className="w-4 h-4 text-amber-400" />
           </div>
           <div className="text-2xl font-black font-mono text-amber-400 mt-2">{avgRetention}%</div>
-          <p className="text-[10px] text-zinc-500 mt-0.5">Active non-expired ratio</p>
+          <p className="text-[10px] text-zinc-400 mt-0.5">Active non-expired ratio</p>
         </div>
 
         <div className="bg-zinc-900 border border-zinc-800 p-4 rounded-2xl">
@@ -61,7 +61,7 @@ export const TrainerPerformanceSection: React.FC<TrainerPerformanceSectionProps>
           <div className="text-2xl font-black font-mono text-white mt-2">
             ₹{totalCommissions.toLocaleString('en-IN')}
           </div>
-          <p className="text-[10px] text-zinc-500 mt-0.5">Earned by floor team</p>
+          <p className="text-[10px] text-zinc-400 mt-0.5">Earned by floor team</p>
         </div>
       </div>
 
@@ -80,11 +80,11 @@ export const TrainerPerformanceSection: React.FC<TrainerPerformanceSectionProps>
         </div>
 
         {isLoading ? (
-          <div className="h-36 flex items-center justify-center text-zinc-500 text-xs">
+          <div className="h-36 flex items-center justify-center text-zinc-400 text-xs">
             Loading trainer metrics…
           </div>
         ) : data.length === 0 ? (
-          <div className="p-8 text-center text-zinc-500 text-xs">No trainer performance data in this scope.</div>
+          <div className="p-8 text-center text-zinc-400 text-xs">No trainer performance data in this scope.</div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm text-left">

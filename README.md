@@ -117,3 +117,18 @@ The QR camera needs HTTPS. The built-in LAN HTTPS mode uses a self-signed certif
    For real use, put Pulse behind a proper domain with a free Let's Encrypt certificate (Caddy).
 6. A public tunnel (e.g. Cloudflare Tunnel or ngrok) gives a trusted HTTPS URL without installing anything on the phone, but it
    exposes the app to the internet. Only do that if the owner agrees, with real PINs set and dev PINs off.
+
+## Business tools (owners & branch managers)
+
+Open **Business** in the top bar.
+
+- **Reports**: monthly revenue by branch, plan and payment method; expenses and net; daily check-ins; members whose plan ended this month and did not renew (churn). Use **Export CSV**, or **Print / Save PDF** (the browser print dialog, no paid service).
+- **Expenses**: record rent, salaries, electricity and other costs per branch. Managers see only their own branch. Only owners can delete an expense.
+- **Renewals**: members can ask to renew from their app. There is no online payment: the desk collects the money, records it with **Renew**, then presses **Confirm**. Trainers see this queue under **Desk → Renewals**.
+- **Privacy (DPDP Act, 2023)**:
+  - Members accept a data notice on first login. They can **Download my data** or **Request data deletion** from their app.
+  - Only an owner can approve a deletion request. Approving it anonymises the member: name, phone, measurements, PIN and consent are removed. Payment records are kept without identity.
+- **Backup (super owner only)**:
+  - **Download backup** gives one SQLite file.
+  - **Restore** checks the uploaded file first: the SQLite header, an integrity check, the required tables, and that its schema version is not newer than the app's. Nothing changes until you type `RESTORE`. A pre-restore copy is kept in `DATA_DIR/backups/`.
+  - Backups contain member phone numbers. Store them privately.

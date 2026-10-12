@@ -6,6 +6,7 @@ import { Dumbbell, QrCode, Calendar, Clock, CreditCard, Scale, PauseCircle, Bell
 import { calculateDaysRemaining } from '../lib/membership';
 import { formatPhoneDisplay } from '../lib/phoneUtils';
 import { PulseAiCoachChat } from './PulseAiCoachChat';
+import { ConsentGate, MemberRenewCard, MemberPrivacyCard } from './MemberSelfService';
 import { safeFetchJson } from '../lib/apiUtils';
 import { apiJson } from '../lib/http';
 import { set as idbSet } from 'idb-keyval';
@@ -197,7 +198,7 @@ export const MemberAppView: React.FC<MemberAppViewProps> = ({ currentProfile, on
           </div>
 
           <div className="space-y-1 text-center py-2">
-            <span className="text-[10px] font-bold text-zinc-500 uppercase block">Remaining Subscription</span>
+            <span className="text-[10px] font-bold text-zinc-400 uppercase block">Remaining Subscription</span>
             <span className={`text-3xl font-black font-mono block ${
               daysRemaining <= 7 ? 'text-amber-400' : 'text-emerald-400'
             }`}>
@@ -210,6 +211,10 @@ export const MemberAppView: React.FC<MemberAppViewProps> = ({ currentProfile, on
           <MemberQrPass memberId={member.id} />
           <MemberPtSummary memberId={member.id} />
         </div>
+
+        <ConsentGate onLogout={onLogout} />
+        <MemberRenewCard daysRemaining={daysRemaining} />
+        <MemberPrivacyCard />
 
         {/* Navigation Tabs */}
         <div className="grid grid-cols-5 gap-1 bg-zinc-900 p-1.5 rounded-2xl border border-zinc-800">
@@ -264,7 +269,7 @@ export const MemberAppView: React.FC<MemberAppViewProps> = ({ currentProfile, on
             {/* Trainer Contact Banner */}
             <div className="bg-zinc-900 p-4 rounded-2xl border border-zinc-800 flex items-center justify-between">
               <div>
-                <span className="text-[10px] font-bold text-zinc-500 uppercase block">Your Assigned Personal Trainer</span>
+                <span className="text-[10px] font-bold text-zinc-400 uppercase block">Your Assigned Personal Trainer</span>
                 <span className="text-sm font-black text-amber-400">{member.trainer_name || 'Pulse Master Trainer'}</span>
               </div>
               <a
@@ -285,7 +290,7 @@ export const MemberAppView: React.FC<MemberAppViewProps> = ({ currentProfile, on
 
             <div className="space-y-2">
               {measurements.length === 0 ? (
-                <div className="p-8 text-center text-zinc-500 text-xs bg-zinc-900 rounded-2xl border border-zinc-800">
+                <div className="p-8 text-center text-zinc-400 text-xs bg-zinc-900 rounded-2xl border border-zinc-800">
                   No body composition logs recorded by trainer yet.
                 </div>
               ) : (
@@ -293,7 +298,7 @@ export const MemberAppView: React.FC<MemberAppViewProps> = ({ currentProfile, on
                   <div key={m.id} className="bg-zinc-900 p-4 rounded-2xl border border-zinc-800 space-y-2 text-xs">
                     <div className="flex justify-between items-center border-b border-zinc-800 pb-2">
                       <span className="font-bold text-orange-400">{m.date}</span>
-                      <span className="text-zinc-500">Weight: <strong className="text-white">{m.weight_kg ? `${m.weight_kg} kg` : 'N/A'}</strong></span>
+                      <span className="text-zinc-400">Weight: <strong className="text-white">{m.weight_kg ? `${m.weight_kg} kg` : 'N/A'}</strong></span>
                     </div>
 
                     <div className="grid grid-cols-3 gap-2 text-center text-[11px] text-zinc-400 pt-1">
@@ -415,11 +420,11 @@ export const MemberAppView: React.FC<MemberAppViewProps> = ({ currentProfile, on
                     <span className="px-2 py-0.5 bg-orange-950 text-orange-400 text-[9px] font-bold uppercase rounded border border-orange-800">
                       {ann.category || 'General'}
                     </span>
-                    <span className="text-[10px] text-zinc-500">{new Date(ann.created_at).toLocaleDateString()}</span>
+                    <span className="text-[10px] text-zinc-400">{new Date(ann.created_at).toLocaleDateString()}</span>
                   </div>
                   <h5 className="text-sm font-black text-white pt-1">{ann.title}</h5>
                   <p className="text-xs text-zinc-300 leading-relaxed">{ann.content}</p>
-                  <span className="text-[10px] text-zinc-500 block pt-1">— Posted by {ann.author_name}</span>
+                  <span className="text-[10px] text-zinc-400 block pt-1">— Posted by {ann.author_name}</span>
                 </div>
               ))}
             </div>

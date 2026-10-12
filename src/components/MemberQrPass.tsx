@@ -48,12 +48,12 @@ export const MemberQrPass: React.FC<{ memberId: string }> = ({ memberId }) => {
       {img ? (
         <div className="p-2 bg-white rounded-xl inline-block shadow-inner"><img src={img} alt="Your check-in QR code" className="w-40 h-40 sm:w-48 sm:h-48" /></div>
       ) : (
-        <div className="w-40 h-40 mx-auto rounded-xl bg-zinc-900 border border-zinc-800 flex items-center justify-center text-xs text-zinc-500 p-3">{loading ? 'Loading your pass…' : 'Pass unavailable'}</div>
+        <div className="w-40 h-40 mx-auto rounded-xl bg-zinc-900 border border-zinc-800 flex items-center justify-center text-xs text-zinc-400 p-3">{loading ? 'Loading your pass…' : 'Pass unavailable'}</div>
       )}
       {note && <p className="text-[11px] text-amber-300 flex items-center justify-center gap-1"><WifiOff className="w-3 h-3" />{note}</p>}
       {error && <p role="alert" className="text-[11px] text-red-300">{error}</p>}
       <div className="flex items-center justify-center gap-2">
-        <span className="text-[10px] font-mono text-zinc-500">Show this at the front desk to check in</span>
+        <span className="text-[10px] font-mono text-zinc-400">Show this at the front desk to check in</span>
         <button onClick={load} aria-label="Refresh pass" className="p-1 rounded bg-zinc-800 text-zinc-300"><RefreshCw className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`} /></button>
       </div>
     </div>

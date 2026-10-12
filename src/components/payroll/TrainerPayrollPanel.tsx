@@ -133,7 +133,7 @@ export const TrainerPayrollPanel: React.FC<TrainerPayrollPanelProps> = ({ branch
           <div className="text-2xl sm:text-3xl font-black font-mono text-emerald-400 mt-2">
             ₹{payroll.grandTotal.toLocaleString('en-IN')}
           </div>
-          <p className="text-[10px] text-zinc-500 mt-1">From activated & renewed client payments</p>
+          <p className="text-[10px] text-zinc-400 mt-1">From activated & renewed client payments</p>
         </div>
 
         <div className="bg-zinc-900 border border-zinc-800 p-5 rounded-3xl">
@@ -144,7 +144,7 @@ export const TrainerPayrollPanel: React.FC<TrainerPayrollPanelProps> = ({ branch
           <div className="text-2xl sm:text-3xl font-black font-mono text-amber-400 mt-2">
             ₹{payroll.grandPending.toLocaleString('en-IN')}
           </div>
-          <p className="text-[10px] text-zinc-500 mt-1">Awaiting owner settlement clearance</p>
+          <p className="text-[10px] text-zinc-400 mt-1">Awaiting owner settlement clearance</p>
         </div>
 
         <div className="bg-zinc-900 border border-zinc-800 p-5 rounded-3xl">
@@ -155,7 +155,7 @@ export const TrainerPayrollPanel: React.FC<TrainerPayrollPanelProps> = ({ branch
           <div className="text-2xl sm:text-3xl font-black font-mono text-white mt-2">
             ₹{payroll.grandPaid.toLocaleString('en-IN')}
           </div>
-          <p className="text-[10px] text-zinc-500 mt-1">Disbursed to trainers this cycle</p>
+          <p className="text-[10px] text-zinc-400 mt-1">Disbursed to trainers this cycle</p>
         </div>
 
         <div className="bg-zinc-900 border border-zinc-800 p-5 rounded-3xl">
@@ -166,7 +166,7 @@ export const TrainerPayrollPanel: React.FC<TrainerPayrollPanelProps> = ({ branch
           <div className="text-2xl sm:text-3xl font-black font-mono text-white mt-2">
             {dayjs(period).format('MMM YYYY')}
           </div>
-          <p className="text-[10px] text-zinc-500 mt-1">1st of month accounting cycle</p>
+          <p className="text-[10px] text-zinc-400 mt-1">1st of month accounting cycle</p>
         </div>
       </div>
 
@@ -190,11 +190,11 @@ export const TrainerPayrollPanel: React.FC<TrainerPayrollPanelProps> = ({ branch
           </div>
 
           {payroll.isLoading ? (
-            <div className="h-40 flex items-center justify-center text-zinc-500 text-xs">
+            <div className="h-40 flex items-center justify-center text-zinc-400 text-xs">
               Loading payroll records…
             </div>
           ) : payroll.trainers.length === 0 ? (
-            <div className="p-12 text-center text-zinc-500 text-xs">
+            <div className="p-12 text-center text-zinc-400 text-xs">
               No commission settlements recorded for {dayjs(period).format('MMMM YYYY')}.
             </div>
           ) : (
@@ -219,7 +219,7 @@ export const TrainerPayrollPanel: React.FC<TrainerPayrollPanelProps> = ({ branch
                       <tr key={t.trainerId} className="hover:bg-zinc-800/40 transition-colors">
                         <td className="px-6 py-4">
                           <div className="font-bold text-white text-sm">{t.name}</div>
-                          <span className="text-[11px] text-zinc-500">{t.branchName || 'Gym Staff'}</span>
+                          <span className="text-[11px] text-zinc-400">{t.branchName || 'Gym Staff'}</span>
                         </td>
 
                         <td className="px-6 py-4 text-right font-mono font-bold text-amber-400 text-sm">
@@ -314,11 +314,11 @@ export const TrainerPayrollPanel: React.FC<TrainerPayrollPanelProps> = ({ branch
           </div>
 
           {recon.isLoading ? (
-            <div className="h-40 flex items-center justify-center text-zinc-500 text-xs">
+            <div className="h-40 flex items-center justify-center text-zinc-400 text-xs">
               Generating reconciliation summary…
             </div>
           ) : recon.rows.length === 0 ? (
-            <div className="p-12 text-center text-zinc-500 text-xs">
+            <div className="p-12 text-center text-zinc-400 text-xs">
               No reconciliation entries for {dayjs(period).format('MMMM YYYY')}.
             </div>
           ) : (
@@ -340,7 +340,7 @@ export const TrainerPayrollPanel: React.FC<TrainerPayrollPanelProps> = ({ branch
                     <tr key={`${r.trainer_id}_${r.branch_id || idx}`} className="hover:bg-zinc-800/40 transition-colors">
                       <td className="px-5 py-4">
                         <div className="font-bold text-white text-sm">{r.trainer_name}</div>
-                        <span className="text-[10px] text-zinc-500">{r.branch_name || 'All Branches'}</span>
+                        <span className="text-[10px] text-zinc-400">{r.branch_name || 'All Branches'}</span>
                       </td>
 
                       <td className="px-5 py-4 text-right font-mono font-bold text-emerald-400">
@@ -355,14 +355,14 @@ export const TrainerPayrollPanel: React.FC<TrainerPayrollPanelProps> = ({ branch
                         ₹{Number(r.paid_amount).toLocaleString('en-IN')}
                       </td>
 
-                      <td className="px-5 py-4 text-right font-mono text-zinc-500">
+                      <td className="px-5 py-4 text-right font-mono text-zinc-400">
                         ₹{Number(r.void_amount || 0).toLocaleString('en-IN')}
                       </td>
 
                       <td className="px-5 py-4 text-center font-mono text-zinc-400">
                         <span className="text-amber-400 font-bold">{r.pending_lines}</span> /{' '}
                         <span className="text-emerald-400 font-bold">{r.paid_lines}</span> /{' '}
-                        <span className="text-zinc-500">{r.void_lines}</span>
+                        <span className="text-zinc-400">{r.void_lines}</span>
                       </td>
 
                       <td className="px-5 py-4 text-right font-mono font-bold">
@@ -412,9 +412,9 @@ export const TrainerPayrollPanel: React.FC<TrainerPayrollPanelProps> = ({ branch
 
             <div className="p-6 overflow-y-auto space-y-4">
               {lines.isLoading ? (
-                <div className="p-8 text-center text-zinc-500 text-xs">Loading line items…</div>
+                <div className="p-8 text-center text-zinc-400 text-xs">Loading line items…</div>
               ) : lines.lines.length === 0 ? (
-                <div className="p-8 text-center text-zinc-500 text-xs">No settlement lines found.</div>
+                <div className="p-8 text-center text-zinc-400 text-xs">No settlement lines found.</div>
               ) : (
                 <div className="space-y-3">
                   {lines.lines.map((line) => (
@@ -452,7 +452,7 @@ export const TrainerPayrollPanel: React.FC<TrainerPayrollPanelProps> = ({ branch
                           <div className="font-mono font-bold text-amber-400 text-sm">
                             ₹{Number(line.amount).toLocaleString('en-IN')}
                           </div>
-                          <span className="text-[10px] text-zinc-500">
+                          <span className="text-[10px] text-zinc-400">
                             {dayjs(line.created_at).format('DD MMM, HH:mm')}
                           </span>
                         </div>

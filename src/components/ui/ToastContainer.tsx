@@ -50,7 +50,7 @@ export const ToastContainer: React.FC = () => {
 
             <button
               onClick={() => toast.dismiss(item.id)}
-              className="text-zinc-500 hover:text-white p-1 rounded-lg transition-colors shrink-0"
+              className="text-zinc-400 hover:text-white p-1 rounded-lg transition-colors shrink-0"
             >
               <X className="w-3.5 h-3.5" />
             </button>

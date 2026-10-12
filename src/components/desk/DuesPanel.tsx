@@ -58,21 +58,21 @@ export const DuesPanel: React.FC<{ branchId?: string; actorName?: string }> = ({
         </div>
       </div>
       {error && <p role="alert" className="text-xs text-red-300 bg-red-950/40 border border-red-800 rounded-xl p-2">Couldn’t load dues: {error} <button onClick={load} className="underline">Retry</button></p>}
-      {!error && !data && <p className="text-xs text-zinc-500">Loading dues…</p>}
+      {!error && !data && <p className="text-xs text-zinc-400">Loading dues…</p>}
       {data && data.targets.length === 0 && (
         <p className="text-xs text-zinc-400 bg-zinc-900 rounded-xl p-3">
           {data.in_cooldown > 0 ? `No one to remind right now — ${data.in_cooldown} member(s) with dues were reminded in the last ${data.cooldown_days} days. Tick “Include recently reminded” to see them.` :
             data.invalid_phone.length ? 'Everyone with dues has an invalid phone number (listed below).' : 'No outstanding dues in this branch. 🎉'}
         </p>
       )}
-      {data && data.in_cooldown > 0 && data.targets.length > 0 && <p className="text-[11px] text-zinc-500">{data.in_cooldown} member(s) hidden: reminded in the last {data.cooldown_days} days.</p>}
+      {data && data.in_cooldown > 0 && data.targets.length > 0 && <p className="text-[11px] text-zinc-400">{data.in_cooldown} member(s) hidden: reminded in the last {data.cooldown_days} days.</p>}
       {data && data.targets.length > 0 && (
         <ul className="divide-y divide-zinc-800 rounded-xl border border-zinc-800 max-h-[50vh] overflow-auto">
           {data.targets.map((t) => (
             <li key={t.member_id} className="p-3 flex items-center gap-2">
               <div className="flex-1 min-w-0">
                 <div className="text-sm text-white font-semibold truncate">{t.full_name}</div>
-                <div className="text-[11px] text-zinc-500 truncate">{t.phone} · {t.branch_name || t.branch_id}{t.last_reminder_at ? ` · last reminded ${new Date(t.last_reminder_at).toLocaleDateString('en-IN')}` : ''}</div>
+                <div className="text-[11px] text-zinc-400 truncate">{t.phone} · {t.branch_name || t.branch_id}{t.last_reminder_at ? ` · last reminded ${new Date(t.last_reminder_at).toLocaleDateString('en-IN')}` : ''}</div>
                 {rowErr[t.member_id] && <div role="alert" className="text-[11px] text-red-300">{rowErr[t.member_id]}</div>}
               </div>
               <div className="text-sm font-bold text-amber-300 shrink-0">₹{t.balance_due.toLocaleString('en-IN')}</div>

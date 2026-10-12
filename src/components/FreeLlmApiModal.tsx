@@ -356,13 +356,13 @@ export const FreeLlmApiModal: React.FC<FreeLlmApiModalProps> = ({
 
                 <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-mono font-bold text-zinc-300 bg-zinc-950/80 p-2.5 rounded-xl border border-zinc-800">
                   <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">1. Gemini 3.8</span>
-                  <span className="text-zinc-500">→</span>
+                  <span className="text-zinc-400">→</span>
                   <span className="px-2 py-0.5 rounded bg-orange-500/20 text-orange-400 border border-orange-500/30">2. Groq Llama 3.3</span>
-                  <span className="text-zinc-500">→</span>
+                  <span className="text-zinc-400">→</span>
                   <span className="px-2 py-0.5 rounded bg-blue-500/20 text-blue-400 border border-blue-500/30">3. Cerebras</span>
-                  <span className="text-zinc-500">→</span>
+                  <span className="text-zinc-400">→</span>
                   <span className="px-2 py-0.5 rounded bg-purple-500/20 text-purple-400 border border-purple-500/30">4. Mistral</span>
-                  <span className="text-zinc-500">→</span>
+                  <span className="text-zinc-400">→</span>
                   <span className="px-2 py-0.5 rounded bg-zinc-800 text-zinc-300">5. Local Engine</span>
                 </div>
               </div>
@@ -417,7 +417,7 @@ export const FreeLlmApiModal: React.FC<FreeLlmApiModalProps> = ({
 
                       {/* Ping result or latency badge */}
                       <div className="mt-3 flex items-center justify-between text-[11px] font-mono border-t border-zinc-800/60 pt-2.5">
-                        <span className="text-zinc-500">
+                        <span className="text-zinc-400">
                           Default: <span className="text-zinc-300 font-bold">{p.defaultModel}</span>
                         </span>
                         
@@ -448,7 +448,7 @@ export const FreeLlmApiModal: React.FC<FreeLlmApiModalProps> = ({
                               <CheckCircle2 className="w-3 h-3" /> Configured
                             </span>
                           ) : (
-                            <span className="text-zinc-500">Using Server Default</span>
+                            <span className="text-zinc-400">Using Server Default</span>
                           )}
                         </span>
 
@@ -561,7 +561,7 @@ export const FreeLlmApiModal: React.FC<FreeLlmApiModalProps> = ({
                     Prompt Input
                   </label>
                   <div className="flex items-center space-x-2 text-xs">
-                    <span className="text-zinc-500">Route via:</span>
+                    <span className="text-zinc-400">Route via:</span>
                     <select
                       value={selectedProvider}
                       onChange={(e) => setSelectedProvider(e.target.value)}

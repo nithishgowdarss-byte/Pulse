@@ -1,31 +1,34 @@
 import React, { useState, useEffect } from 'react';
+import { lazyNamed, prefetchLazy, LazyBoundary, Loading } from './lib/lazy';
 import { Navbar, ViewMode } from './components/Navbar';
-import { ClientHandoverForm } from './components/ClientHandoverForm';
-import { TrainerDashboard } from './components/TrainerDashboard';
+const ClientHandoverForm = lazyNamed(() => import('./components/ClientHandoverForm'), 'ClientHandoverForm');
+const TrainerDashboard = lazyNamed(() => import('./components/TrainerDashboard'), 'TrainerDashboard');
 import { OwnerDashboard } from './components/OwnerDashboard';
 import { MemberDetailModal } from './components/MemberDetailModal';
 import { AddPaymentModal } from './components/AddPaymentModal';
 import { RenewMemberModal } from './components/RenewMemberModal';
-import { CommissionSettlementModal } from './components/CommissionSettlementModal';
-import { BulkContactModal } from './components/BulkContactModal';
-import { ExpoSchemaGuideModal } from './components/ExpoSchemaGuideModal';
-import { BranchManagementModal } from './components/BranchManagementModal';
-import { AuditLogsModal } from './components/AuditLogsModal';
-import { MemberAppView } from './components/MemberAppView';
+const CommissionSettlementModal = lazyNamed(() => import('./components/CommissionSettlementModal'), 'CommissionSettlementModal');
+const BulkContactModal = lazyNamed(() => import('./components/BulkContactModal'), 'BulkContactModal');
+const ExpoSchemaGuideModal = lazyNamed(() => import('./components/ExpoSchemaGuideModal'), 'ExpoSchemaGuideModal');
+const BranchManagementModal = lazyNamed(() => import('./components/BranchManagementModal'), 'BranchManagementModal');
+const AuditLogsModal = lazyNamed(() => import('./components/AuditLogsModal'), 'AuditLogsModal');
+const MemberAppView = lazyNamed(() => import('./components/MemberAppView'), 'MemberAppView');
 import { OfflineBanner } from './components/OfflineBanner';
-import { FreeLlmApiModal } from './components/FreeLlmApiModal';
-import { TrainerAiStudioModal } from './components/TrainerAiStudioModal';
-import { OwnerAiBroadcastModal } from './components/OwnerAiBroadcastModal';
+const FreeLlmApiModal = lazyNamed(() => import('./components/FreeLlmApiModal'), 'FreeLlmApiModal');
+const TrainerAiStudioModal = lazyNamed(() => import('./components/TrainerAiStudioModal'), 'TrainerAiStudioModal');
+const OwnerAiBroadcastModal = lazyNamed(() => import('./components/OwnerAiBroadcastModal'), 'OwnerAiBroadcastModal');
 import { Profile, Member, UserRole, PlanPackage, PaymentMethod, Branch } from './types';
 
 import { safeFetchJson } from './lib/apiUtils';
 import { LoginScreen } from './components/LoginScreen';
-import { PinManagementModal } from './components/PinManagementModal';
-import { BannerStudioModal } from './components/BannerStudioModal';
-import { DeskToolsModal } from './components/desk/DeskToolsModal';
+const PinManagementModal = lazyNamed(() => import('./components/PinManagementModal'), 'PinManagementModal');
+const BannerStudioModal = lazyNamed(() => import('./components/BannerStudioModal'), 'BannerStudioModal');
+const DeskToolsModal = lazyNamed(() => import('./components/desk/DeskToolsModal'), 'DeskToolsModal');
+const OwnerOpsModal = lazyNamed(() => import('./components/ops/OwnerOpsModal'), 'OwnerOpsModal');
 import { installAuthInterceptor, fetchMe, logout, rememberProfile, AUTH_REQUIRED_EVENT } from './lib/auth';
 
 installAuthInterceptor();
+if (typeof window !== 'undefined') window.addEventListener('load', prefetchLazy, { once: true });
 
 const isOwnerLike = (p: Profile | null) => !!p && (p.role === 'owner' || p.role === 'super_owner' || p.role === 'branch_manager');
 const defaultViewFor = (p: Profile): ViewMode => (p.role === 'member' ? 'member_app' : p.role === 'trainer' ? 'trainer' : 'owner');
@@ -64,6 +67,7 @@ export default function App() {
   const [showPinModal, setShowPinModal] = useState<boolean>(false);
   const [showBannerStudio, setShowBannerStudio] = useState<boolean>(false);
   const [showDesk, setShowDesk] = useState<boolean>(false);
+  const [showOps, setShowOps] = useState<boolean>(false);
 
   // Fetch initial gym state
   const fetchData = async () => {
@@ -262,7 +266,7 @@ export default function App() {
     return (
       <div className="min-h-screen bg-zinc-950 text-zinc-100 font-sans antialiased">
         <OfflineBanner />
-        <MemberAppView currentProfile={currentProfile} onLogout={handleLogout} />
+        <LazyBoundary><React.Suspense fallback={<Loading />}><MemberAppView currentProfile={currentProfile} onLogout={handleLogout} /></React.Suspense></LazyBoundary>
       </div>
     );
   }
@@ -290,6 +294,7 @@ export default function App() {
         onLogout={handleLogout}
         onOpenPins={currentProfile.role === 'super_owner' ? () => setShowPinModal(true) : undefined}
         onOpenDesk={() => setShowDesk(true)}
+        onOpenOps={currentProfile.role !== 'trainer' ? () => setShowOps(true) : undefined}
         onOpenBannerStudio={currentProfile.role === 'super_owner' || currentProfile.role === 'owner' ? () => setShowBannerStudio(true) : undefined}
         currentProfile={currentProfile}
         profiles={profiles}
@@ -309,6 +314,7 @@ export default function App() {
       />
 
       {/* Main Body View based on viewMode */}
+      <LazyBoundary><React.Suspense fallback={<Loading />}>
       <main className="pb-16">
         {viewMode === 'client' ? (
           <ClientHandoverForm
@@ -361,6 +367,12 @@ export default function App() {
       </main>
 
 
+      {showOps && (
+        <React.Suspense fallback={<Loading />}>
+          <OwnerOpsModal role={currentProfile.role} branches={branches} branchIds={(currentProfile as any).assigned_branch_ids?.length ? (currentProfile as any).assigned_branch_ids : currentProfile.branch_id ? [currentProfile.branch_id] : undefined} activeBranchId={activeBranchId}
+            onClose={() => setShowOps(false)} onOpenRenew={(id) => { const m = members.find((x) => x.id === id); if (m) { setShowOps(false); setRenewModalMember(m); } }} />
+        </React.Suspense>
+      )}
       {showPinModal && <PinManagementModal onClose={() => setShowPinModal(false)} />}
       {showDesk && <DeskToolsModal role={currentProfile.role} branchId={activeBranchId} actorName={currentProfile.full_name} onClose={() => setShowDesk(false)} />}
       {showBannerStudio && <BannerStudioModal branches={branches} onClose={() => setShowBannerStudio(false)} />}
@@ -488,6 +500,7 @@ export default function App() {
           onClose={() => setShowOwnerBroadcastModal(false)}
         />
       )}
+      </React.Suspense></LazyBoundary>
     </div>
   );
 }

@@ -98,7 +98,7 @@ export const PtPanel: React.FC<{ role: string; branchId?: string }> = ({ role, b
         </form>
       )}
       {error && <p role="alert" className="text-xs text-red-300 bg-red-950/40 border border-red-800 rounded-xl p-2">Couldn’t load PT packages: {error} <button onClick={load} className="underline">Retry</button></p>}
-      {!error && pkgs === null && <p className="text-xs text-zinc-500">Loading PT packages…</p>}
+      {!error && pkgs === null && <p className="text-xs text-zinc-400">Loading PT packages…</p>}
       {pkgs && pkgs.length === 0 && <p className="text-xs text-zinc-400 bg-zinc-900 rounded-xl p-3">{activeOnly ? 'No active PT packages. Untick “Active only” to see finished ones.' : 'No PT packages yet.'}{canCreate ? ' Use “New PT package” to sell one.' : ' Ask the manager/owner to create one.'}</p>}
       {pkgs && pkgs.length > 0 && (
         <ul className="space-y-2 max-h-[50vh] overflow-auto">
@@ -106,7 +106,7 @@ export const PtPanel: React.FC<{ role: string; branchId?: string }> = ({ role, b
             <li key={p.id} className="rounded-xl border border-zinc-800 bg-zinc-950 p-3 flex items-center gap-3">
               <div className="flex-1 min-w-0">
                 <div className="text-sm font-semibold text-white truncate">{p.member_name}</div>
-                <div className="text-[11px] text-zinc-500 truncate">Trainer {p.trainer_name}{p.expires_on ? ` · expires ${p.expires_on}` : ''}{p.sessions.length ? ` · last ${new Date(p.sessions[p.sessions.length - 1].at).toLocaleDateString('en-IN')}` : ''}</div>
+                <div className="text-[11px] text-zinc-400 truncate">Trainer {p.trainer_name}{p.expires_on ? ` · expires ${p.expires_on}` : ''}{p.sessions.length ? ` · last ${new Date(p.sessions[p.sessions.length - 1].at).toLocaleDateString('en-IN')}` : ''}</div>
                 <div className="mt-1 h-1.5 rounded bg-zinc-800 overflow-hidden"><div className="h-full bg-orange-500" style={{ width: `${(p.sessions_used / p.sessions_total) * 100}%` }} /></div>
               </div>
               <div className={`text-xs font-bold shrink-0 ${p.expired ? 'text-red-400' : 'text-zinc-200'}`}>{p.expired ? 'Expired' : `${p.sessions_left}/${p.sessions_total} left`}</div>

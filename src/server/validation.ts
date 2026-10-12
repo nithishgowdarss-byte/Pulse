@@ -11,8 +11,7 @@ export const NUMERIC_FIELD_RULES: Record<string, [number, number]> = {
   budget: [0, 100_000_000],
   commission_rate: [0, 100],
   commRateInput: [0, 100],
-  subscription_months: [1, 60],
-  subMonths: [1, 60],
+  // subscription_months is validated by each handler (whole number 1–36).
   age: [0, 120],
   weight_kg: [1, 500],
   body_fat_pct: [0, 100],

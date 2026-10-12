@@ -294,7 +294,7 @@ Sneha rr 9632114455`;
                 <Sparkles className="w-3 h-3" />
                 AUTOMATIC BRANCH ROUTING ENGINE
               </span>
-              <span className="text-zinc-500 text-xs">• Zero Prompts</span>
+              <span className="text-zinc-400 text-xs">• Zero Prompts</span>
             </div>
             <h3 className="text-lg font-black text-white tracking-tight">
               Dump Contacts Bulk or Send One-by-One
@@ -506,7 +506,7 @@ Sneha rr 9632114455`;
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
                   <span className="text-xs font-bold text-zinc-300 uppercase">Live Preview Table</span>
-                  <span className="text-xs text-zinc-500">({displayedContacts.length} shown)</span>
+                  <span className="text-xs text-zinc-400">({displayedContacts.length} shown)</span>
                 </div>
 
                 <div className="flex items-center gap-2">
@@ -552,7 +552,7 @@ Sneha rr 9632114455`;
 
                   {/* Search Filter */}
                   <div className="relative">
-                    <Search className="w-3.5 h-3.5 text-zinc-500 absolute left-2.5 top-2" />
+                    <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-2.5 top-2" />
                     <input
                       type="text"
                       placeholder="Search preview..."
@@ -688,7 +688,7 @@ Sneha rr 9632114455`;
                   10-Digit Mobile Number
                 </label>
                 <div className="relative flex items-center">
-                  <span className="absolute left-3.5 text-xs font-bold text-zinc-500">+91</span>
+                  <span className="absolute left-3.5 text-xs font-bold text-zinc-400">+91</span>
                   <input
                     type="tel"
                     required
@@ -766,7 +766,7 @@ Sneha rr 9632114455`;
                         <div className="flex items-center space-x-2">
                           <span className="font-bold text-white">{item.cleanedName}</span>
                           {item.name !== item.cleanedName && (
-                            <span className="text-[10px] text-zinc-500 font-mono">({item.name})</span>
+                            <span className="text-[10px] text-zinc-400 font-mono">({item.name})</span>
                           )}
                         </div>
                         <div className="text-[11px] text-zinc-400 font-mono mt-0.5">
@@ -789,7 +789,7 @@ Sneha rr 9632114455`;
                         {item.branchName.replace('Pulse Fitness - ', '')}
                       </span>
 
-                      <span className="text-[10px] text-zinc-500">
+                      <span className="text-[10px] text-zinc-400">
                         {item.timestamp}
                       </span>
                     </div>

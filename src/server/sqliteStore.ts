@@ -206,6 +206,68 @@ export function createSqliteStore(opts: StoreOptions) {
     },
     close() { if (db) { try { db.close(); } catch {} db = null; } },
     ping(): boolean { if (!enabled) return true; try { ensureDb().prepare('SELECT 1 AS ok').get(); return true; } catch { return false; } },
+    /** Consistent point-in-time copy of the whole database (flushes pending writes first). */
+    backup(dest: string): { file: string; bytes: number } {
+      if (!enabled) throw new Error('Storage is disabled');
+      ensureDb();
+      if (timer) { clearTimeout(timer); timer = null; }
+      if (dirty) { writeAll(opts.snapshot()); dirty = false; lastSavedAt = new Date().toISOString(); }
+      fs.mkdirSync(path.dirname(dest), { recursive: true });
+      if (fs.existsSync(dest)) fs.unlinkSync(dest);
+      db.prepare('VACUUM INTO ?').run(dest);
+      try { fs.chmodSync(dest, 0o600); } catch {}
+      return { file: dest, bytes: fs.statSync(dest).size };
+    },
+    /** Replace all data with a validated backup. Keeps a pre-restore copy of the current DB. */
+    restoreFrom(data: Record<string, any>, keepCopyAt?: string) {
+      if (!enabled) throw new Error('Storage is disabled');
+      ensureDb();
+      if (keepCopyAt) this.backup(keepCopyAt);
+      writeAll(data, true);
+      // drop collections that are not in the backup
+      const keep = new Set(Object.keys(data));
+      for (const m of db.prepare('SELECT collection FROM collection_meta').all()) {
+        if (!keep.has(m.collection)) { db.prepare('DELETE FROM documents WHERE collection = ?').run(m.collection); db.prepare('DELETE FROM collection_meta WHERE collection = ?').run(m.collection); hashes.delete(m.collection); }
+      }
+      opts.restore(data);
+      lastSavedAt = new Date().toISOString();
+    },
     describe() { return enabled ? { engine: 'sqlite', file: path.basename(file), lastSavedAt } : 'disabled'; },
   };
+}
+
+export const REQUIRED_COLLECTIONS = ['branches', 'profiles', 'members'];
+export type BackupCheck = { ok: boolean; error?: string; data?: any; summary?: Record<string, number>; schemaVersion?: number };
+
+/** Open an uploaded backup read-only and prove it is a sane Pulse database before anything is replaced. */
+export function validateBackupFile(file: string, maxSchema = MIGRATIONS[MIGRATIONS.length - 1].id): BackupCheck {
+  let head: Buffer;
+  try { head = Buffer.alloc(16); const fd = fs.openSync(file, 'r'); fs.readSync(fd, head, 0, 16, 0); fs.closeSync(fd); } catch { return { ok: false, error: 'Could not read the uploaded file.' }; }
+  if (head.toString('latin1') !== 'SQLite format 3\u0000') return { ok: false, error: 'This is not a Pulse backup (not an SQLite database file).' };
+  let db: any;
+  try {
+    const { DatabaseSync } = require_('node:sqlite');
+    db = new DatabaseSync(file, { readOnly: true });
+    const integ = db.prepare('PRAGMA integrity_check').get();
+    if (!integ || Object.values(integ)[0] !== 'ok') return { ok: false, error: 'The backup file is damaged (integrity check failed).' };
+    const tables = new Set(db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map((r: any) => r.name));
+    for (const t of ['documents', 'collection_meta', 'schema_migrations']) if (!tables.has(t)) return { ok: false, error: `Not a Pulse backup (missing table ${t}).` };
+    const ver = (db.prepare('SELECT MAX(id) AS v FROM schema_migrations').get()?.v as number) || 0;
+    if (ver > maxSchema) return { ok: false, error: `This backup is from a newer Pulse version (schema ${ver}). Update Pulse first.` };
+    const metas = db.prepare('SELECT collection, kind FROM collection_meta').all();
+    const data: Record<string, any> = {};
+    const rows = db.prepare('SELECT doc_id, data FROM documents WHERE collection = ? ORDER BY rowid');
+    for (const m of metas) {
+      const r = rows.all(m.collection);
+      try {
+        data[m.collection] = m.kind === 'array' ? r.map((x: any) => JSON.parse(x.data)) : Object.fromEntries(r.map((x: any) => [x.doc_id, JSON.parse(x.data)]));
+      } catch { return { ok: false, error: `The backup has unreadable records in "${m.collection}".` }; }
+    }
+    for (const c of REQUIRED_COLLECTIONS) if (!Array.isArray(data[c]) || data[c].length === 0) return { ok: false, error: `The backup has no ${c} — refusing to restore an empty gym.` };
+    if (!data.members.every((m: any) => m && typeof m.id === 'string' && typeof m.full_name === 'string')) return { ok: false, error: 'The backup has malformed member records.' };
+    const summary = Object.fromEntries(Object.entries(data).map(([k, v]) => [k, Array.isArray(v) ? v.length : Object.keys(v || {}).length]));
+    return { ok: true, data, summary, schemaVersion: ver };
+  } catch (e: any) {
+    return { ok: false, error: `Could not open the backup: ${String(e?.message || e).slice(0, 120)}` };
+  } finally { try { db?.close(); } catch {} }
 }

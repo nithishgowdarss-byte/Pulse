@@ -182,7 +182,7 @@ export const MyShiftPanel: React.FC<MyShiftPanelProps> = ({
                     {dayjs(openShift.checked_in_at).format('hh:mm A')}
                   </div>
                   <div className="text-xs text-zinc-400 mt-1 flex items-center gap-2">
-                    <Calendar className="w-3 h-3 text-zinc-500" />
+                    <Calendar className="w-3 h-3 text-zinc-400" />
                     {dayjs(openShift.checked_in_at).format('ddd, D MMM YYYY')}
                   </div>
                 </div>
@@ -196,7 +196,7 @@ export const MyShiftPanel: React.FC<MyShiftPanelProps> = ({
                     {elapsed || 'Calculating...'}
                   </div>
                   <div className="text-xs text-zinc-400 mt-1 flex items-center gap-1 justify-end">
-                    <Building2 className="w-3 h-3 text-zinc-500" />
+                    <Building2 className="w-3 h-3 text-zinc-400" />
                     {branchName}
                   </div>
                 </div>
@@ -204,7 +204,7 @@ export const MyShiftPanel: React.FC<MyShiftPanelProps> = ({
 
               {openShift.notes && (
                 <div className="text-xs text-zinc-400 bg-zinc-950/60 p-3 rounded-lg border border-zinc-800">
-                  <span className="text-zinc-500 font-medium">Opening Note: </span>
+                  <span className="text-zinc-400 font-medium">Opening Note: </span>
                   {openShift.notes}
                 </div>
               )}
@@ -237,7 +237,7 @@ export const MyShiftPanel: React.FC<MyShiftPanelProps> = ({
               <div className="bg-zinc-950/60 border border-zinc-800/80 rounded-xl p-5 text-center">
                 <AlertCircle className="w-8 h-8 text-amber-400 mx-auto mb-2 opacity-80" />
                 <div className="text-sm font-semibold text-zinc-300">You are currently clocked out</div>
-                <div className="text-xs text-zinc-500 mt-1 max-w-sm mx-auto">
+                <div className="text-xs text-zinc-400 mt-1 max-w-sm mx-auto">
                   Start your shift when you arrive on the gym floor, or ask the branch manager / owner to scan your QR badge.
                 </div>
               </div>
@@ -275,7 +275,7 @@ export const MyShiftPanel: React.FC<MyShiftPanelProps> = ({
               <QrIcon className="w-4 h-4 text-red-500" />
               <span>Digital Staff QR Badge</span>
             </div>
-            <p className="text-xs text-zinc-500">
+            <p className="text-xs text-zinc-400">
               Present this code to the Owner or Manager scanner for automatic shift check-in / check-out.
             </p>
           </div>
@@ -287,7 +287,7 @@ export const MyShiftPanel: React.FC<MyShiftPanelProps> = ({
 
           <div className="w-full space-y-2">
             <div className="flex items-center justify-between text-xs bg-zinc-950/80 px-3 py-2 rounded-lg border border-zinc-800/80">
-              <span className="text-zinc-500 truncate">{staffName}</span>
+              <span className="text-zinc-400 truncate">{staffName}</span>
               <span className="font-mono text-zinc-400">{staffId}</span>
             </div>
 
@@ -309,18 +309,18 @@ export const MyShiftPanel: React.FC<MyShiftPanelProps> = ({
             <Calendar className="w-4 h-4 text-red-500" />
             <h4 className="text-sm font-bold text-white uppercase tracking-wider">My Recent Shifts</h4>
           </div>
-          <span className="text-xs text-zinc-500">Showing last {recentLogs.length} shifts</span>
+          <span className="text-xs text-zinc-400">Showing last {recentLogs.length} shifts</span>
         </div>
 
         {recentLogs.length === 0 ? (
-          <div className="text-center py-8 text-xs text-zinc-500">
+          <div className="text-center py-8 text-xs text-zinc-400">
             No shift logs found for this staff member.
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead>
-                <tr className="border-b border-zinc-800 text-zinc-500 uppercase tracking-wider">
+                <tr className="border-b border-zinc-800 text-zinc-400 uppercase tracking-wider">
                   <th className="py-2.5 px-3">Date</th>
                   <th className="py-2.5 px-3">Clock In</th>
                   <th className="py-2.5 px-3">Clock Out</th>
@@ -360,7 +360,7 @@ export const MyShiftPanel: React.FC<MyShiftPanelProps> = ({
                           </span>
                         ) : (
                           <span className="inline-flex items-center gap-1 text-zinc-400">
-                            <CheckCircle2 className="w-3 h-3 text-zinc-500" />
+                            <CheckCircle2 className="w-3 h-3 text-zinc-400" />
                             Completed
                           </span>
                         )}

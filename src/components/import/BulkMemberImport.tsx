@@ -132,11 +132,11 @@ export const BulkMemberImport: React.FC<BulkMemberImportProps> = ({ currentBranc
       {/* File Drop / Input Area */}
       <div className="flex flex-col sm:flex-row items-center gap-3">
         <label className="flex-1 w-full flex flex-col items-center justify-center p-5 border-2 border-dashed border-zinc-700 hover:border-emerald-500/60 rounded-xl bg-zinc-950/60 cursor-pointer transition-colors text-center group">
-          <Upload className="w-6 h-6 text-zinc-500 group-hover:text-emerald-400 mb-2 transition-colors" />
+          <Upload className="w-6 h-6 text-zinc-400 group-hover:text-emerald-400 mb-2 transition-colors" />
           <span className="text-xs font-semibold text-zinc-300">
             {fileName ? `Selected: ${fileName}` : 'Click or Drag & Drop member CSV file here'}
           </span>
-          <span className="text-[11px] text-zinc-500 mt-0.5">Supports UTF-8 CSV up to 2MB</span>
+          <span className="text-[11px] text-zinc-400 mt-0.5">Supports UTF-8 CSV up to 2MB</span>
           <input
             type="file"
             accept=".csv,text/csv"
@@ -188,7 +188,7 @@ export const BulkMemberImport: React.FC<BulkMemberImportProps> = ({ currentBranc
 
           <div className="flex items-center justify-between pt-2">
             <p className="text-xs text-zinc-400 flex items-center gap-1.5">
-              <Info className="w-3.5 h-3.5 text-zinc-500" />
+              <Info className="w-3.5 h-3.5 text-zinc-400" />
               <span>Duplicate phone numbers will be automatically skipped during import.</span>
             </p>
 

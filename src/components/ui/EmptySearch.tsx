@@ -6,7 +6,7 @@ export const EmptySearch: React.FC<{ query?: string; what: string; filterNote?: 
   const q = (query || '').trim();
   return (
     <div role="status" data-testid="empty-search" className="p-6 text-center text-xs text-zinc-400 space-y-2">
-      <SearchX className="w-5 h-5 mx-auto text-zinc-600" />
+      <SearchX className="w-5 h-5 mx-auto text-zinc-400" />
       {q ? (
         <p>No {what} match “<span className="text-zinc-200 break-all">{q}</span>”{filterNote ? ` ${filterNote}` : ''}. Check the spelling, try part of the name, or search by phone digits.</p>
       ) : (

@@ -92,11 +92,11 @@ export const AddPaymentModal: React.FC<AddPaymentModalProps> = ({
           {/* Balance Overview */}
           <div className="bg-zinc-950 p-4 rounded-2xl border border-zinc-800 flex justify-between items-center">
             <div>
-              <span className="text-[10px] font-bold text-zinc-500 uppercase block">Current Balance Due</span>
+              <span className="text-[10px] font-bold text-zinc-400 uppercase block">Current Balance Due</span>
               <span className="text-lg font-black text-amber-400 font-mono">₹{member.balance_due || 0}</span>
             </div>
             <div className="text-right">
-              <span className="text-[10px] font-bold text-zinc-500 uppercase block">Total Paid So Far</span>
+              <span className="text-[10px] font-bold text-zinc-400 uppercase block">Total Paid So Far</span>
               <span className="text-sm font-bold text-emerald-400 font-mono">₹{member.amount_paid || 0}</span>
             </div>
           </div>
@@ -107,7 +107,7 @@ export const AddPaymentModal: React.FC<AddPaymentModalProps> = ({
               Payment Amount (₹) <span className="text-red-400">*</span>
             </label>
             <div className="relative">
-              <span className="absolute left-3.5 top-2.5 text-zinc-500 font-bold text-sm">₹</span>
+              <span className="absolute left-3.5 top-2.5 text-zinc-400 font-bold text-sm">₹</span>
               <input
                 type="number"
                 required
