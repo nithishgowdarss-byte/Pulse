@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { EmptySearch, matchesPerson } from './ui/EmptySearch';
 import { Member, Profile, CommissionSettlement, Branch } from '../types';
 import {
   Users,
@@ -117,12 +118,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
 
     if (searchQuery) {
       const q = searchQuery.toLowerCase().trim();
-      return (
-        m.full_name.toLowerCase().includes(q) ||
-        m.phone.includes(q) ||
-        (m.email && m.email.toLowerCase().includes(q)) ||
-        (m.trainer_name && m.trainer_name.toLowerCase().includes(q))
-      );
+      return matchesPerson(q, m.full_name, m.phone, [m.email, m.trainer_name]);
     }
     return true;
   });
@@ -252,7 +248,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
             </div>
           </div>
           <div>
-            <div className="text-2xl sm:text-3xl font-black font-mono text-emerald-400">
+            <div className="text-xl lg:text-2xl xl:text-3xl font-black font-mono text-emerald-400">
               ₹{totalGrossRevenue.toLocaleString()}
             </div>
             {totalBalanceDue > 0 ? (
@@ -274,7 +270,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
             </div>
           </div>
           <div>
-            <div className="text-2xl sm:text-3xl font-black font-mono text-white">
+            <div className="text-xl lg:text-2xl xl:text-3xl font-black font-mono text-white">
               {activeMembersCount}
             </div>
             <p className="text-[11px] text-zinc-400 font-medium mt-1">
@@ -295,7 +291,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
             </div>
           </div>
           <div>
-            <div className="text-2xl sm:text-3xl font-black font-mono text-red-400">
+            <div className="text-xl lg:text-2xl xl:text-3xl font-black font-mono text-red-400">
               ₹{commissionOverview.aggregatePendingCommissions.toLocaleString()}
             </div>
             <p className="text-[11px] text-zinc-400 font-medium mt-1">
@@ -316,7 +312,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
             </div>
           </div>
           <div>
-            <div className="text-2xl sm:text-3xl font-black font-mono text-indigo-400">
+            <div className="text-xl lg:text-2xl xl:text-3xl font-black font-mono text-indigo-400">
               {branches.length} Locations
             </div>
             <p className="text-[11px] text-zinc-400 font-medium mt-1">
@@ -463,8 +459,9 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
                 <tbody className="divide-y divide-zinc-800/60">
                   {filteredMainMembers.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="px-6 py-12 text-center text-zinc-500 text-xs">
-                        No member records match the selected filter.
+                      <td colSpan={5}>
+                        <EmptySearch what="members" query={searchQuery} filterNote={memberFilter !== 'all' ? `with status “${memberFilter}”` : activeBranchId && activeBranchId !== 'all' ? 'in this branch' : undefined}
+                          onClear={() => { setSearchQuery(''); setMemberFilter('all'); }} emptyHint="Add members with Onboard / Import." />
                       </td>
                     </tr>
                   ) : (

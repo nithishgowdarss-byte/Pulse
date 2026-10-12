@@ -135,6 +135,8 @@ const TRAINER_ALLOW: Rule[] = [
   R('GET', '/api/retention/(alerts|stale-members|churn-risk-distribution|risk-score/[^/]+)'),
   R('GET', '/api/staff-attendance/open-shift/[^/]+'),
   R('POST', '/api/attendance/check-in'),
+  R('GET', '/api/pt-packages'),
+  R('POST', '/api/pt-packages/[^/]+/sessions'),
   R('POST', '/api/members'),
   R('POST', '/api/members/[^/]+/(payment|renew|measurements|freeze|activate)'),
   R('POST', '/api/notifications/([^/]+/read|read-all)'),
@@ -147,7 +149,8 @@ const MEMBER_ALLOW: Rule[] = [
   R('GET', '/api/members/[^/]+/(measurements|payments)'),
   R('POST', '/api/members/[^/]+/freeze'),
   R('POST', '/api/freeze-requests'),
-  R('POST', '/api/attendance/check-in'),
+  R('GET', '/api/members/[^/]+/pass'),
+  R('GET', '/api/pt-packages'),
   R('POST', '/api/freellmapi/(coach-chat|workout-plan|diet-plan)'),
 ];
 
@@ -177,7 +180,7 @@ export function authorize(ctx: AuthzContext, method: string, path: string, body:
 
   if (session.role === 'member') {
     for (const id of memberIds) if (id !== session.id) return 'Members can only access their own records';
-    if (method === 'POST' && /^\/api\/(freeze-requests|attendance\/check-in)$/.test(path) && b.member_id !== session.id) {
+    if (method === 'POST' && /^\/api\/freeze-requests$/.test(path) && b.member_id !== session.id) {
       return 'Members can only act on their own record';
     }
     return null;

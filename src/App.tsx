@@ -22,7 +22,8 @@ import { safeFetchJson } from './lib/apiUtils';
 import { LoginScreen } from './components/LoginScreen';
 import { PinManagementModal } from './components/PinManagementModal';
 import { BannerStudioModal } from './components/BannerStudioModal';
-import { installAuthInterceptor, fetchMe, logout, AUTH_REQUIRED_EVENT } from './lib/auth';
+import { DeskToolsModal } from './components/desk/DeskToolsModal';
+import { installAuthInterceptor, fetchMe, logout, rememberProfile, AUTH_REQUIRED_EVENT } from './lib/auth';
 
 installAuthInterceptor();
 
@@ -62,6 +63,7 @@ export default function App() {
   const [authChecked, setAuthChecked] = useState<boolean>(false);
   const [showPinModal, setShowPinModal] = useState<boolean>(false);
   const [showBannerStudio, setShowBannerStudio] = useState<boolean>(false);
+  const [showDesk, setShowDesk] = useState<boolean>(false);
 
   // Fetch initial gym state
   const fetchData = async () => {
@@ -101,11 +103,17 @@ export default function App() {
       if (me) { setCurrentProfile(me); setViewMode(defaultViewFor(me)); if (me.role === 'trainer') setSelectedTrainerId(me.id); }
       setAuthChecked(true);
     });
-    const onAuthRequired = () => setCurrentProfile(null);
+    const onAuthRequired = () => { rememberProfile(null); setCurrentProfile(null); };
     window.addEventListener(AUTH_REQUIRED_EVENT, onAuthRequired);
     return () => window.removeEventListener(AUTH_REQUIRED_EVENT, onAuthRequired);
   }, []);
 
+  // Branch-scoped staff never sit on "All branches": lock the selector to their own branch.
+  useEffect(() => {
+    if (!currentProfile || currentProfile.role === 'owner' || currentProfile.role === 'super_owner' || currentProfile.role === 'member') return;
+    const ids: string[] = (currentProfile as any).assigned_branch_ids?.length ? (currentProfile as any).assigned_branch_ids : currentProfile.branch_id ? [currentProfile.branch_id] : [];
+    if (ids.length && !ids.includes(activeBranchId)) setActiveBranchId(ids[0]);
+  }, [currentProfile, activeBranchId]);
   const signedInId = currentProfile?.id;
   const signedInRole = currentProfile?.role;
   useEffect(() => {
@@ -281,6 +289,7 @@ export default function App() {
         onViewModeChange={changeView}
         onLogout={handleLogout}
         onOpenPins={currentProfile.role === 'super_owner' ? () => setShowPinModal(true) : undefined}
+        onOpenDesk={() => setShowDesk(true)}
         onOpenBannerStudio={currentProfile.role === 'super_owner' || currentProfile.role === 'owner' ? () => setShowBannerStudio(true) : undefined}
         currentProfile={currentProfile}
         profiles={profiles}
@@ -353,6 +362,7 @@ export default function App() {
 
 
       {showPinModal && <PinManagementModal onClose={() => setShowPinModal(false)} />}
+      {showDesk && <DeskToolsModal role={currentProfile.role} branchId={activeBranchId} actorName={currentProfile.full_name} onClose={() => setShowDesk(false)} />}
       {showBannerStudio && <BannerStudioModal branches={branches} onClose={() => setShowBannerStudio(false)} />}
 
       {/* Multi-Branch Management Modal */}

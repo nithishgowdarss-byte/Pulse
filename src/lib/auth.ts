@@ -19,24 +19,40 @@ export function installAuthInterceptor() {
   };
 }
 
+const LAST_PROFILE = 'pulse_last_profile';
+export function rememberProfile(p: Profile | null) {
+  try { p ? localStorage.setItem(LAST_PROFILE, JSON.stringify(p)) : localStorage.removeItem(LAST_PROFILE); } catch { /* private mode */ }
+}
+/**
+ * Current session. When the server can't be reached (offline / server down) we fall back to the last signed-in
+ * profile on this device so the app (e.g. a member's saved QR pass) still opens; logout clears it.
+ */
 export async function fetchMe(): Promise<Profile | null> {
   try {
     const r = await fetch('/api/auth/me');
-    if (!r.ok) return null;
-    return (await r.json()).profile ?? null;
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const p = (await r.json()).profile ?? null;
+    rememberProfile(p);
+    return p;
   } catch {
-    return null;
+    try { return JSON.parse(localStorage.getItem(LAST_PROFILE) || 'null'); } catch { return null; }
   }
 }
 
 export async function login(phone: string, pin: string): Promise<{ profile?: Profile; error?: string }> {
-  const r = await fetch('/api/auth/login', {
+  let r: Response;
+  try {
+    r = await fetch('/api/auth/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ phone, pin }),
-  });
+    });
+  } catch {
+    return { error: typeof navigator !== 'undefined' && !navigator.onLine ? 'You are offline. Connect to the internet to sign in.' : 'Could not reach the Pulse server. Check Wi-Fi/data and try again.' };
+  }
   const body = await r.json().catch(() => ({}));
-  if (!r.ok) return { error: body.error || 'Login failed' };
+  if (!r.ok) return { error: body.error || (r.status >= 500 ? 'Server error. Please try again in a moment.' : 'Login failed') };
+  rememberProfile(body.profile ?? null);
   return { profile: body.profile };
 }
 

@@ -1,3 +1,4 @@
+import { csvCell } from '../lib/csv';
 import { useState, useEffect, useCallback } from 'react';
 import dayjs from 'dayjs';
 import { safeFetchJson } from '../lib/apiUtils';
@@ -188,7 +189,7 @@ export function buildPayrollReconciliationCsv(rows: ReconciliationRow[], period:
       r.paid_lines,
       r.void_lines,
       r.variance ?? 0,
-    ].map((v) => `"${String(v ?? '').replace(/"/g, '""')}"`);
+    ].map(csvCell);
 
     lines.push(vals.join(','));
   }

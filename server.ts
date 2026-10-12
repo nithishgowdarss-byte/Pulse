@@ -59,7 +59,10 @@ const HOST = process.env.HOST || '127.0.0.1';
 
 import { securityHeaders, createRateLimiter, requestLogger, errorHandler, isProduction, createBasicAuthGate } from './src/server/http';
 import { createPersistence } from './src/server/persistence';
+import { createSqliteStore } from './src/server/sqliteStore';
 import { bodyValidator } from './src/server/validation';
+import { createVault, getSecretsKey, SealedSecret } from './src/server/secrets';
+import { issuePass, verifyPass } from './src/server/memberPass';
 import {
   hashPin, verifyPin, isValidPinFormat, encodeSession, sessionCookie, clearSessionCookie,
   loginThrottle, createAuthMiddleware, getSessionSecret, Session, readSession,
@@ -88,6 +91,9 @@ app.use('/api', createRateLimiter({ windowMs: 60_000, max: Number(process.env.AP
 // ---------------- Authentication (per-person PIN) ----------------
 // PIN hashes live apart from profiles/members so they are never returned by list endpoints.
 let pinHashes: Record<string, string> = {};
+// Encrypted third-party secrets (MSG91 auth keys...), keyed by vault_secret_id. Never returned by any API.
+let secretVault: Record<string, SealedSecret> = {};
+const vault = createVault(() => secretVault);
 const OWNER_SET = new Set(['super_owner', 'owner']);
 const DEV_PINS: Record<string, string> = {
   usr_super_1: '1111', usr_owner_1: '2222', usr_manager_1: '3333',
@@ -156,7 +162,7 @@ app.post('/api/auth/login', (req, res) => {
   loginThrottle.success(acctKey);
   const token = encodeSession({ kind: hit.kind, id: hit.id, role: hit.role, pv: pinVersion(hit.id) });
   res.setHeader('Set-Cookie', sessionCookie(token));
-  auditLogs.unshift({ id: `aud_${Date.now()}`, actor_id: hit.id, action: 'auth.login', entity_type: 'session', entity_id: hit.id, created_at: new Date().toISOString() } as any);
+  auditLogs.unshift({ id: `aud_${Date.now()}`, actor_id: hit.id, user_name: sessionProfile({ ...hit, exp: 0 } as any)?.full_name || hit.id, action: 'auth.login', entity_type: 'session', entity_id: hit.id, created_at: new Date().toISOString() } as any);
   res.json({ kind: hit.kind, profile: sessionProfile({ ...hit, exp: 0 }) });
 });
 
@@ -169,11 +175,12 @@ app.use(
   createAuthMiddleware({
     sessionValid: (s) => !!sessionProfile(s) && (s.kind !== 'member' || isMemberActiveAccount(members.find((m) => m.id === s.id))) && s.pv === pinVersion(s.id) && !!pinHashes[s.id],
     branchIdsFor: (s) => (s.role === 'super_owner' || s.role === 'owner' ? null : s.kind === 'member' ? [] : staffBranchIds(profiles.find((p) => p.id === s.id))),
-    memberBranch: (id) => members.find((m) => m.id === id)?.branch_id,
+    memberBranch: (id) => (members.find((m) => m.id === id) || (/^\d{10}$/.test(id) ? members.find((m) => m.phone === id) : undefined))?.branch_id,
     entityBranch: (p) => {
       const mb = (id?: string) => (id ? members.find((m) => m.id === id)?.branch_id : undefined);
       let m: RegExpMatchArray | null;
       if ((m = p.match(/^\/api\/freeze-requests\/([^/]+)$/))) { const r = freezeRequests.find((x) => x.id === m![1]); return r ? r.branch_id || mb(r.member_id) || '' : undefined; }
+      if ((m = p.match(/^\/api\/pt-packages\/([^/]+)(\/.*)?$/))) { const r = ptPackages.find((x) => x.id === m![1]); return r ? r.branch_id : ''; }
       if ((m = p.match(/^\/api\/leads\/([^/]+)(\/convert)?$/))) { const r = leads.find((x) => x.id === m![1]); return r ? r.branch_id || '' : undefined; }
       if ((m = p.match(/^\/api\/retention\/alerts\/([^/]+)\/resolve$/))) { const r = retentionAlerts.find((x) => x.id === m![1]); return r ? r.branch_id || mb(r.member_id) || '' : undefined; }
       if ((m = p.match(/^\/api\/winback\/enrollments\/([^/]+)/))) { const r = winbackEnrollments.find((x) => x.id === m![1]); return r ? r.branch_id || mb(r.member_id) || '' : undefined; }
@@ -220,7 +227,8 @@ app.delete('/api/auth/pins/:id', (req, res) => {
 
 // Liveness / readiness probe (used by Docker HEALTHCHECK)
 app.get(['/healthz', '/api/health'], (_req, res) => {
-  res.json({ status: 'ok', uptimeSec: Math.round(process.uptime()), persistence: persistence?.describe() ?? 'disabled', time: new Date().toISOString() });
+  const dbOk = (persistence as any)?.ping ? (persistence as any).ping() : true;
+  res.status(dbOk ? 200 : 503).json({ status: dbOk ? 'ok' : 'degraded', db: dbOk ? 'ok' : 'unreachable', uptimeSec: Math.round(process.uptime()), persistence: persistence?.describe() ?? 'disabled', time: new Date().toISOString() });
 });
 
 // Destructive developer endpoints are disabled in production unless explicitly allowed
@@ -377,8 +385,13 @@ let profiles: Profile[] = [
   }
 ];
 
+const GYM_TZ = process.env.GYM_TZ || 'Asia/Kolkata';
+/** Calendar date (YYYY-MM-DD) in the gym's timezone, not UTC (UTC "today" is wrong before 05:30 IST). */
+function gymDate(ms = Date.now()): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: GYM_TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(ms));
+}
 function getTodayStr(): string {
-  return new Date().toISOString().slice(0, 10);
+  return gymDate();
 }
 
 function addMonthsToDate(dateStr: string, months: number): string {
@@ -424,6 +437,13 @@ let winbackCampaigns: WinbackCampaign[] = [];
 let winbackEnrollments: WinbackEnrollment[] = [];
 let winbackAttempts: WinbackAttempt[] = [];
 let balanceReminderLogs: BalanceReminderLog[] = [];
+interface PtSession { id: string; at: string; trainer_id: string; trainer_name: string; notes?: string }
+interface PtPackage {
+  id: string; member_id: string; member_name: string; branch_id: string;
+  trainer_id: string; trainer_name: string; sessions_total: number; price: number;
+  purchased_at: string; expires_on?: string; notes?: string; sessions: PtSession[]; created_by: string;
+}
+let ptPackages: PtPackage[] = [];
 let balanceReminderSettings: Record<string, BalanceReminderSettings> = {
   'br_nag_1': {
     branch_id: 'br_nag_1',
@@ -928,7 +948,7 @@ function calculateMemberRisk(
 
 function initializeSeedData() {
   const today = getTodayStr();
-  const yesterday = new Date(Date.now() - 24 * 3600 * 1000).toISOString().slice(0, 10);
+  const yesterday = gymDate(Date.now() - 24 * 3600 * 1000);
   const threeDaysAgo = new Date(Date.now() - 3 * 24 * 3600 * 1000).toISOString().slice(0, 10);
   const sixDaysAgo = new Date(Date.now() - 6 * 24 * 3600 * 1000).toISOString().slice(0, 10);
   const lastMonth = new Date(Date.now() - 32 * 24 * 3600 * 1000).toISOString().slice(0, 10);
@@ -950,8 +970,8 @@ function initializeSeedData() {
       branch_id: 'br_nag_1',
       branch_name: 'Pulse Fitness - Nagarbhavi',
       is_archived: false,
-      created_at: `${today}T10:15:00.000Z`,
-      updated_at: `${today}T10:15:00.000Z`
+      created_at: seedAt(today, `10:15`),
+      updated_at: seedAt(today, `10:15`)
     },
     {
       id: 'mem_2',
@@ -969,8 +989,8 @@ function initializeSeedData() {
       branch_id: 'br_nag_1',
       branch_name: 'Pulse Fitness - Nagarbhavi',
       is_archived: false,
-      created_at: `${today}T11:30:00.000Z`,
-      updated_at: `${today}T11:30:00.000Z`
+      created_at: seedAt(today, `11:30`),
+      updated_at: seedAt(today, `11:30`)
     },
     {
       id: 'mem_3',
@@ -1000,8 +1020,8 @@ function initializeSeedData() {
       mandate_status: 'active',
       next_billing_date: addMonthsToDate(today, 6),
       is_archived: false,
-      created_at: `${today}T08:00:00.000Z`,
-      updated_at: `${today}T08:05:00.000Z`
+      created_at: seedAt(today, `08:00`),
+      updated_at: seedAt(today, `08:05`)
     },
     {
       id: 'mem_4',
@@ -1027,8 +1047,8 @@ function initializeSeedData() {
       branch_id: 'br_nag_1',
       branch_name: 'Pulse Fitness - Nagarbhavi',
       is_archived: false,
-      created_at: `${today}T09:20:00.000Z`,
-      updated_at: `${today}T09:25:00.000Z`
+      created_at: seedAt(today, `09:20`),
+      updated_at: seedAt(today, `09:25`)
     },
     {
       id: 'mem_5',
@@ -1053,8 +1073,8 @@ function initializeSeedData() {
       branch_id: 'br_rr_2',
       branch_name: 'Pulse Fitness - RR Nagar',
       is_archived: false,
-      created_at: `${yesterday}T14:10:00.000Z`,
-      updated_at: `${yesterday}T14:15:00.000Z`
+      created_at: seedAt(yesterday, `14:10`),
+      updated_at: seedAt(yesterday, `14:15`)
     },
     {
       id: 'mem_6',
@@ -1078,8 +1098,8 @@ function initializeSeedData() {
       branch_id: 'br_nag_1',
       branch_name: 'Pulse Fitness - Nagarbhavi',
       is_archived: false,
-      created_at: `${sixDaysAgo}T17:45:00.000Z`,
-      updated_at: `${sixDaysAgo}T17:50:00.000Z`
+      created_at: seedAt(sixDaysAgo, `17:45`),
+      updated_at: seedAt(sixDaysAgo, `17:50`)
     },
     {
       id: 'mem_7',
@@ -1103,8 +1123,8 @@ function initializeSeedData() {
       branch_id: 'br_bsk_3',
       branch_name: 'Pulse Fitness - Banashankari',
       is_archived: false,
-      created_at: `${lastMonth}T10:00:00.000Z`,
-      updated_at: `${lastMonth}T10:05:00.000Z`
+      created_at: seedAt(lastMonth, `10:00`),
+      updated_at: seedAt(lastMonth, `10:05`)
     },
     {
       id: 'mem_8',
@@ -1128,8 +1148,8 @@ function initializeSeedData() {
       branch_id: 'br_bsk_3',
       branch_name: 'Pulse Fitness - Banashankari',
       is_archived: false,
-      created_at: `${threeDaysAgo}T09:00:00.000Z`,
-      updated_at: `${threeDaysAgo}T09:05:00.000Z`
+      created_at: seedAt(threeDaysAgo, `09:00`),
+      updated_at: seedAt(threeDaysAgo, `09:05`)
     }
   ];
 
@@ -1149,7 +1169,7 @@ function initializeSeedData() {
       assigned_trainer_name: 'Vishal',
       branch_id: 'br_nag_1',
       branch_name: 'Pulse Fitness - Nagarbhavi',
-      created_at: `${yesterday}T12:00:00.000Z`
+      created_at: seedAt(yesterday, `12:00`)
     },
     {
       id: 'lead_2',
@@ -1166,7 +1186,7 @@ function initializeSeedData() {
       assigned_trainer_name: 'Varaprasad',
       branch_id: 'br_bsk_3',
       branch_name: 'Pulse Fitness - Banashankari',
-      created_at: `${threeDaysAgo}T15:30:00.000Z`
+      created_at: seedAt(threeDaysAgo, `15:30`)
     },
     {
       id: 'lead_3',
@@ -1183,7 +1203,7 @@ function initializeSeedData() {
       assigned_trainer_name: 'Kumar',
       branch_id: 'br_rr_2',
       branch_name: 'Pulse Fitness - RR Nagar',
-      created_at: `${sixDaysAgo}T11:00:00.000Z`
+      created_at: seedAt(sixDaysAgo, `11:00`)
     }
   ];
 
@@ -1196,7 +1216,7 @@ function initializeSeedData() {
       title: 'Joined Pulse Fitness',
       description: 'Enrolled in 6-Month General Gym membership via GPay.',
       actor_name: 'Vishal (Trainer)',
-      created_at: `${today}T08:05:00.000Z`
+      created_at: seedAt(today, `08:05`)
     },
     {
       id: 'crm_2',
@@ -1206,7 +1226,7 @@ function initializeSeedData() {
       title: 'Payment Received (₹12,000)',
       description: 'Partial activation payment. Remaining balance due: ₹3,000.',
       actor_name: 'Manju (Trainer)',
-      created_at: `${today}T09:25:00.000Z`
+      created_at: seedAt(today, `09:25`)
     },
     {
       id: 'crm_3',
@@ -1216,7 +1236,7 @@ function initializeSeedData() {
       title: 'QR Check-in',
       description: 'Checked in at Nagarbhavi branch turnstile via Mobile QR Code.',
       actor_name: 'Vishal',
-      created_at: `${today}T06:30:00.000Z`
+      created_at: seedAt(today, `06:30`)
     }
   ];
 
@@ -1228,7 +1248,7 @@ function initializeSeedData() {
       content: 'Join Coach Vishal and Coach Manju this Sunday at 10 AM for a squat and deadlift form breakdown session! Free for all active members.',
       author_name: 'Bipin Amrutha (Super Owner)',
       category: 'event',
-      created_at: `${today}T09:00:00.000Z`
+      created_at: seedAt(today, `09:00`)
     },
     {
       id: 'ann_2',
@@ -1236,7 +1256,7 @@ function initializeSeedData() {
       content: 'Upgrade to VIP Annual Membership this week and get 2 extra months FREE + Complimentary Diet Plan.',
       author_name: 'Bipin Amrutha (Super Owner)',
       category: 'offer',
-      created_at: `${yesterday}T10:00:00.000Z`
+      created_at: seedAt(yesterday, `10:00`)
     }
   ];
 
@@ -1251,7 +1271,7 @@ function initializeSeedData() {
       chest_inches: 40.5,
       biceps_inches: 14.5,
       notes: 'Initial body composition check on joining',
-      created_at: `${today}T08:10:00.000Z`
+      created_at: seedAt(today, `08:10`)
     }
   ];
 
@@ -1265,7 +1285,7 @@ function initializeSeedData() {
       reason: 'Official business travel to London',
       status: 'pending',
       branch_id: 'br_rr_2',
-      created_at: `${today}T12:00:00.000Z`
+      created_at: seedAt(today, `12:00`)
     }
   ];
 
@@ -1281,7 +1301,7 @@ function initializeSeedData() {
       new_value: { name: 'Siddharth Rao', plan: 'General Gym', price: 12000 },
       branch_id: 'br_nag_1',
       device_info: 'Web Dashboard / Chrome',
-      created_at: `${today}T08:05:00.000Z`
+      created_at: seedAt(today, `08:05`)
     }
   ];
 
@@ -1292,7 +1312,7 @@ function initializeSeedData() {
       member_id: 'mem_3',
       member_name: 'Siddharth Rao',
       member_package: 'General Gym',
-      checked_in_at: `${today}T06:30:00.000Z`,
+      checked_in_at: seedAt(today, `06:30`),
       checked_in_by: 'usr_trainer_1',
       checked_in_by_name: 'Vishal',
       method: 'qr',
@@ -1303,7 +1323,7 @@ function initializeSeedData() {
       member_id: 'mem_4',
       member_name: 'Ananya Deshmukh',
       member_package: 'Personal Training (PT)',
-      checked_in_at: `${today}T07:15:00.000Z`,
+      checked_in_at: seedAt(today, `07:15`),
       checked_in_by: 'usr_trainer_2',
       checked_in_by_name: 'Manju',
       method: 'qr',
@@ -1314,7 +1334,7 @@ function initializeSeedData() {
       member_id: 'mem_5',
       member_name: 'Karan Kapoor',
       member_package: 'VIP Annual Membership',
-      checked_in_at: `${today}T08:05:00.000Z`,
+      checked_in_at: seedAt(today, `08:05`),
       checked_in_by: 'usr_trainer_5',
       checked_in_by_name: 'Kumar',
       method: 'manual',
@@ -1325,7 +1345,7 @@ function initializeSeedData() {
       member_id: 'mem_8',
       member_name: 'Manish Pandey',
       member_package: 'Cardio & HIIT Special',
-      checked_in_at: `${today}T09:00:00.000Z`,
+      checked_in_at: seedAt(today, `09:00`),
       checked_in_by: 'usr_trainer_4',
       checked_in_by_name: 'Gangadhar',
       method: 'qr',
@@ -1336,7 +1356,7 @@ function initializeSeedData() {
       member_id: 'mem_6',
       member_name: 'Neha Nair',
       member_package: 'General Gym',
-      checked_in_at: `${today}T18:15:00.000Z`,
+      checked_in_at: seedAt(today, `18:15`),
       checked_in_by: 'usr_trainer_1',
       checked_in_by_name: 'Vishal',
       method: 'qr',
@@ -1347,7 +1367,7 @@ function initializeSeedData() {
       member_id: 'mem_3',
       member_name: 'Siddharth Rao',
       member_package: 'General Gym',
-      checked_in_at: `${yesterday}T06:45:00.000Z`,
+      checked_in_at: seedAt(yesterday, `06:45`),
       checked_in_by: 'usr_trainer_1',
       checked_in_by_name: 'Vishal',
       method: 'qr',
@@ -1358,7 +1378,7 @@ function initializeSeedData() {
       member_id: 'mem_5',
       member_name: 'Karan Kapoor',
       member_package: 'VIP Annual Membership',
-      checked_in_at: `${yesterday}T07:30:00.000Z`,
+      checked_in_at: seedAt(yesterday, `07:30`),
       checked_in_by: 'usr_trainer_5',
       checked_in_by_name: 'Kumar',
       method: 'qr',
@@ -1369,7 +1389,7 @@ function initializeSeedData() {
       member_id: 'mem_6',
       member_name: 'Neha Nair',
       member_package: 'General Gym',
-      checked_in_at: `${yesterday}T18:40:00.000Z`,
+      checked_in_at: seedAt(yesterday, `18:40`),
       checked_in_by: 'usr_trainer_1',
       checked_in_by_name: 'Vishal',
       method: 'qr',
@@ -1380,7 +1400,7 @@ function initializeSeedData() {
       member_id: 'mem_8',
       member_name: 'Manish Pandey',
       member_package: 'Cardio & HIIT Special',
-      checked_in_at: `${yesterday}T19:15:00.000Z`,
+      checked_in_at: seedAt(yesterday, `19:15`),
       checked_in_by: 'usr_trainer_3',
       checked_in_by_name: 'Varaprasad',
       method: 'qr',
@@ -1398,14 +1418,14 @@ function initializeSeedData() {
   ];
 
   for (let d = 2; d <= 14; d++) {
-    const pastDate = new Date(Date.now() - d * 24 * 3600 * 1000).toISOString().slice(0, 10);
+    const pastDate = gymDate(Date.now() - d * 24 * 3600 * 1000);
     // Morning peak check-ins (6am - 9am)
     attendanceLogs.push({
       id: `att_past_${d}_1`,
       member_id: memberPool[d % memberPool.length].id,
       member_name: memberPool[d % memberPool.length].name,
       member_package: memberPool[d % memberPool.length].pkg,
-      checked_in_at: `${pastDate}T0${6 + (d % 3)}:${10 * (d % 5)}:00.000Z`,
+      checked_in_at: seedAt(pastDate, `0${6 + (d % 3)}:${10 * (d % 5)}`),
       checked_in_by: memberPool[d % memberPool.length].trainer,
       checked_in_by_name: memberPool[d % memberPool.length].trainerName,
       method: 'qr',
@@ -1418,7 +1438,7 @@ function initializeSeedData() {
         member_id: memberPool[(d + 1) % memberPool.length].id,
         member_name: memberPool[(d + 1) % memberPool.length].name,
         member_package: memberPool[(d + 1) % memberPool.length].pkg,
-        checked_in_at: `${pastDate}T07:45:00.000Z`,
+        checked_in_at: seedAt(pastDate, `07:45`),
         checked_in_by: 'usr_trainer_2',
         checked_in_by_name: 'Manju',
         method: 'qr',
@@ -1432,7 +1452,7 @@ function initializeSeedData() {
       member_id: memberPool[(d + 2) % memberPool.length].id,
       member_name: memberPool[(d + 2) % memberPool.length].name,
       member_package: memberPool[(d + 2) % memberPool.length].pkg,
-      checked_in_at: `${pastDate}T1${7 + (d % 3)}:20:00.000Z`,
+      checked_in_at: seedAt(pastDate, `1${7 + (d % 3)}:20`),
       checked_in_by: 'usr_trainer_1',
       checked_in_by_name: 'Vishal',
       method: 'qr',
@@ -1446,67 +1466,67 @@ function initializeSeedData() {
       id: 'stf_att_today_1',
       staff_id: 'usr_trainer_1', // Vishal - Nagarabhavi
       branch_id: 'br_nag_1',
-      checked_in_at: `${today}T06:30:00.000Z`,
+      checked_in_at: seedAt(today, `06:30`),
       checked_out_at: null, // Currently open shift (on floor)
       method: 'qr',
       notes: 'Morning shift opening check-in',
       recorded_by: 'usr_trainer_1',
-      created_at: `${today}T06:30:00.000Z`
+      created_at: seedAt(today, `06:30`)
     },
     {
       id: 'stf_att_today_2',
       staff_id: 'usr_trainer_2', // Manju - Nagarabhavi
       branch_id: 'br_nag_1',
-      checked_in_at: `${today}T06:00:00.000Z`,
-      checked_out_at: `${today}T11:00:00.000Z`,
+      checked_in_at: seedAt(today, `06:00`),
+      checked_out_at: seedAt(today, `11:00`),
       method: 'manual',
       notes: 'Morning batch trainer completed',
       recorded_by: 'usr_owner_1',
-      created_at: `${today}T06:00:00.000Z`
+      created_at: seedAt(today, `06:00`)
     },
     {
       id: 'stf_att_today_3',
       staff_id: 'usr_trainer_3', // Pradeep - RR Nagar
       branch_id: 'br_rr_2',
-      checked_in_at: `${today}T07:00:00.000Z`,
+      checked_in_at: seedAt(today, `07:00`),
       checked_out_at: null, // On floor
       method: 'qr',
       notes: 'Floor duty & PT slots',
       recorded_by: 'usr_trainer_3',
-      created_at: `${today}T07:00:00.000Z`
+      created_at: seedAt(today, `07:00`)
     },
     {
       id: 'stf_att_today_4',
       staff_id: 'usr_trainer_4', // Ananya - Banashankari
       branch_id: 'br_bsk_3',
-      checked_in_at: `${today}T06:45:00.000Z`,
+      checked_in_at: seedAt(today, `06:45`),
       checked_out_at: null, // On floor
       method: 'qr',
       notes: 'Zumba & General fitness shift',
       recorded_by: 'usr_trainer_4',
-      created_at: `${today}T06:45:00.000Z`
+      created_at: seedAt(today, `06:45`)
     },
     {
       id: 'stf_att_yesterday_1',
       staff_id: 'usr_trainer_1',
       branch_id: 'br_nag_1',
-      checked_in_at: `${yesterday}T06:30:00.000Z`,
-      checked_out_at: `${yesterday}T14:30:00.000Z`,
+      checked_in_at: seedAt(yesterday, `06:30`),
+      checked_out_at: seedAt(yesterday, `14:30`),
       method: 'qr',
       notes: 'Full day shift',
       recorded_by: 'usr_trainer_1',
-      created_at: `${yesterday}T06:30:00.000Z`
+      created_at: seedAt(yesterday, `06:30`)
     },
     {
       id: 'stf_att_yesterday_2',
       staff_id: 'usr_trainer_2',
       branch_id: 'br_nag_1',
-      checked_in_at: `${yesterday}T16:00:00.000Z`,
-      checked_out_at: `${yesterday}T21:30:00.000Z`,
+      checked_in_at: seedAt(yesterday, `16:00`),
+      checked_out_at: seedAt(yesterday, `21:30`),
       method: 'manual',
       notes: 'Evening shift',
       recorded_by: 'usr_owner_1',
-      created_at: `${yesterday}T16:00:00.000Z`
+      created_at: seedAt(yesterday, `16:00`)
     }
   ];
 
@@ -1518,7 +1538,7 @@ function initializeSeedData() {
       export_type: 'vcf',
       filter_used: 'Active Members',
       member_count: 5,
-      created_at: `${yesterday}T16:00:00.000Z`
+      created_at: seedAt(yesterday, `16:00`)
     }
   ];
 
@@ -1542,10 +1562,10 @@ function initializeSeedData() {
       period_end: today,
       period_month: currentMonthStr,
       status: 'paid',
-      paid_at: `${yesterday}T18:00:00.000Z`,
+      paid_at: seedAt(yesterday, `18:00`),
       paid_by: 'usr_owner_1',
       notes: 'Initial 6-month membership commission paid via UPI',
-      created_at: `${yesterday}T18:00:00.000Z`
+      created_at: seedAt(yesterday, `18:00`)
     },
     {
       id: 'set_2',
@@ -1566,7 +1586,7 @@ function initializeSeedData() {
       period_month: currentMonthStr,
       status: 'pending',
       notes: 'Partial activation payment commission',
-      created_at: `${today}T09:25:00.000Z`
+      created_at: seedAt(today, `09:25`)
     },
     {
       id: 'set_3',
@@ -1587,7 +1607,7 @@ function initializeSeedData() {
       period_month: currentMonthStr,
       status: 'pending',
       notes: 'New quarter membership commission',
-      created_at: `${today}T10:15:00.000Z`
+      created_at: seedAt(today, `10:15`)
     },
     {
       id: 'set_4',
@@ -1608,7 +1628,7 @@ function initializeSeedData() {
       period_month: currentMonthStr,
       status: 'pending',
       notes: 'Monthly HIIT coaching commission',
-      created_at: `${today}T11:00:00.000Z`
+      created_at: seedAt(today, `11:00`)
     },
     {
       id: 'set_5',
@@ -1629,7 +1649,7 @@ function initializeSeedData() {
       period_month: currentMonthStr,
       status: 'pending',
       notes: 'VIP Annual onboarding commission',
-      created_at: `${yesterday}T14:15:00.000Z`
+      created_at: seedAt(yesterday, `14:15`)
     }
   ];
 
@@ -1643,7 +1663,7 @@ function initializeSeedData() {
       notes: 'Initial 6-month general gym membership',
       received_by: 'usr_trainer_1',
       received_by_name: 'Rahul Sharma',
-      created_at: `${today}T08:05:00.000Z`
+      created_at: seedAt(today, `08:05`)
     },
     {
       id: 'pay_2',
@@ -1654,7 +1674,7 @@ function initializeSeedData() {
       notes: 'Partial activation payment (₹3,000 balance pending)',
       received_by: 'usr_trainer_2',
       received_by_name: 'Priya Patel',
-      created_at: `${today}T09:25:00.000Z`
+      created_at: seedAt(today, `09:25`)
     }
   ];
 
@@ -1667,7 +1687,7 @@ function initializeSeedData() {
       risk_score: 75,
       risk_level: 'high',
       reasons: ['Membership renewal due in 4 days', 'No gym check-in for 6 days'],
-      calculated_at: `${today}T06:00:00.000Z`
+      calculated_at: seedAt(today, `06:00`)
     },
     {
       id: 'mem_4_risk',
@@ -1676,7 +1696,7 @@ function initializeSeedData() {
       risk_score: 45,
       risk_level: 'medium',
       reasons: ['Outstanding balance of ₹3,000'],
-      calculated_at: `${today}T06:00:00.000Z`
+      calculated_at: seedAt(today, `06:00`)
     },
     {
       id: 'mem_3_risk',
@@ -1685,7 +1705,7 @@ function initializeSeedData() {
       risk_score: 10,
       risk_level: 'low',
       reasons: ['Consistent regular check-ins', 'E-Mandate AutoPay active'],
-      calculated_at: `${today}T06:00:00.000Z`
+      calculated_at: seedAt(today, `06:00`)
     }
   ];
 
@@ -1698,7 +1718,7 @@ function initializeSeedData() {
       severity: 'high',
       message: 'Membership renewal due in 4 days · Absent for 6 days',
       is_resolved: false,
-      created_at: `${today}T06:00:00.000Z`
+      created_at: seedAt(today, `06:00`)
     }
   ];
 
@@ -1710,7 +1730,7 @@ function initializeSeedData() {
       amount: 12000,
       status: 'success',
       razorpay_payment_id: 'pay_rzp_mock_9921',
-      attempted_at: `${today}T08:05:00.000Z`
+      attempted_at: seedAt(today, `08:05`)
     }
   ];
 
@@ -1726,8 +1746,8 @@ function initializeSeedData() {
       provider_response: { provider: 'WHATSAPP_CLOUD_API', status: 'DELIVERED' },
       reply_received: true,
       reply_text: 'Hi Rahul! Yes I will renew this Friday after my shift.',
-      replied_at: `${today}T11:00:00.000Z`,
-      sent_at: `${yesterday}T10:00:00.000Z`
+      replied_at: seedAt(today, `11:00`),
+      sent_at: seedAt(yesterday, `10:00`)
     }
   ];
 
@@ -1741,7 +1761,7 @@ function initializeSeedData() {
       body: '"Hi Rahul! Yes I will renew this Friday after my shift."',
       member_id: 'mem_6',
       is_read: false,
-      created_at: `${today}T11:00:00.000Z`
+      created_at: seedAt(today, `11:00`)
     },
     {
       id: 'notif_2',
@@ -1752,7 +1772,7 @@ function initializeSeedData() {
       body: 'Score 75/100: Renewal due in 4 days & no attendance for 6 days.',
       member_id: 'mem_6',
       is_read: false,
-      created_at: `${today}T06:00:00.000Z`
+      created_at: seedAt(today, `06:00`)
     }
   ];
 
@@ -1765,7 +1785,7 @@ function initializeSeedData() {
       max_attempts: 3,
       cooldown_hours: 48,
       is_active: true,
-      created_at: `${lastMonth}T00:00:00.000Z`
+      created_at: seedAt(lastMonth, `00:00`)
     }
   ];
 
@@ -1784,10 +1804,10 @@ function initializeSeedData() {
       status: 'messaged',
       attempt_count: 1,
       last_channel: 'whatsapp',
-      last_attempt_at: `${yesterday}T10:00:00.000Z`,
+      last_attempt_at: seedAt(yesterday, `10:00`),
       churn_probability: 0.8125,
-      created_at: `${yesterday}T09:00:00.000Z`,
-      updated_at: `${yesterday}T10:00:00.000Z`
+      created_at: seedAt(yesterday, `09:00`),
+      updated_at: seedAt(yesterday, `10:00`)
     },
     {
       id: 'enr_2',
@@ -1799,8 +1819,8 @@ function initializeSeedData() {
       status: 'enrolled',
       attempt_count: 0,
       churn_probability: 0.6134,
-      created_at: `${today}T06:00:00.000Z`,
-      updated_at: `${today}T06:00:00.000Z`
+      created_at: seedAt(today, `06:00`),
+      updated_at: seedAt(today, `06:00`)
     }
   ];
 
@@ -1814,7 +1834,7 @@ function initializeSeedData() {
       channel: 'whatsapp',
       status: 'sent',
       provider_id: 'msg_wac_991283',
-      created_at: `${yesterday}T10:00:00.000Z`
+      created_at: seedAt(yesterday, `10:00`)
     }
   ];
 }
@@ -1824,6 +1844,24 @@ initializeSeedData();
 /**
  * Dynamic Expiry Auto-Sync Helper
  */
+/** Seed clock times are gym-local (IST). Never produce a time in the future (e.g. "18:15 today" seen at 9 am). */
+function seedAt(day: string, hm: string): string {
+  const t = new Date(`${day}T${hm}:00+05:30`).getTime();
+  const latest = Date.now() - 10 * 60 * 1000;
+  return new Date(Number.isFinite(t) ? Math.min(t, latest) : latest).toISOString();
+}
+
+/** Every payment carries its branch, gym-local entry date and type, so per-branch/day totals are right. */
+function normPayment<T extends Record<string, any>>(p: T, entryType?: string): T {
+  const anyP: any = p;
+  const mem = anyP.member_id ? members.find(m => m.id === anyP.member_id) : undefined;
+  if (!anyP.branch_id && mem) anyP.branch_id = mem.branch_id;
+  if (!anyP.created_at) anyP.created_at = new Date().toISOString();
+  if (!anyP.entry_date) anyP.entry_date = gymDate(Date.parse(anyP.created_at));
+  if (!anyP.entry_type && entryType) anyP.entry_type = entryType;
+  return p;
+}
+
 function syncMemberExpiries() {
   const todayStr = getTodayStr();
   members.forEach(m => {
@@ -1933,8 +1971,19 @@ app.post('/api/members', (req, res) => {
     return res.status(400).json({ error: 'Full name and phone number are required.' });
   }
 
-  const cleanPhone = phone.replace(/\D/g, '').slice(-10);
-  const trainer = profiles.find(p => p.id === onboarded_by) || profiles.find(p => p.role === 'trainer');
+  if (typeof full_name !== 'string' || !full_name.trim() || full_name.length > 120) {
+    return res.status(400).json({ error: 'Name must be 1–120 characters.' });
+  }
+  const cleanPhone = String(phone).replace(/\D/g, '').slice(-10);
+  if (!/^[6-9]\d{9}$/.test(cleanPhone)) {
+    return res.status(400).json({ error: 'Enter a valid 10-digit Indian mobile number (starting with 6–9).', code: 'INVALID_PHONE' });
+  }
+  if (req.body.branch_id && !['auto', 'all', 'br_hq_1'].includes(req.body.branch_id) && !branches.some(b => b.id === req.body.branch_id)) {
+    return res.status(400).json({ error: 'Unknown branch.' });
+  }
+  const sessionUser = (req as any).auth?.session;
+  const trainer = (sessionUser?.role === 'trainer' ? profiles.find(p => p.id === sessionUser.id) : undefined)
+    || profiles.find(p => p.id === onboarded_by) || profiles.find(p => p.role === 'trainer');
 
   // Auto-detect branch if branch_id is missing or set to 'auto'
   let targetBranchId = req.body.branch_id;
@@ -2346,6 +2395,11 @@ function processMemberActivation(targetId: string, payload: any, res: express.Re
   const dueVal = balDue !== undefined ? parseFloat(String(balDue)) : 0;
   const commRate = commRateInput !== undefined ? parseFloat(String(commRateInput)) : pkgConfig.defaultCommissionRate;
 
+  if (!Number.isInteger(months) || months < 1 || months > 36) return res.status(400).json({ error: 'Subscription must be 1–36 months.' });
+  if (!Number.isFinite(paidVal) || paidVal < 0 || paidVal > 1000000) return res.status(400).json({ error: 'Amount paid must be between ₹0 and ₹10,00,000.' });
+  if (!Number.isFinite(dueVal) || dueVal < 0 || dueVal > 1000000) return res.status(400).json({ error: 'Balance due must be between ₹0 and ₹10,00,000.' });
+  if (!Number.isFinite(commRate) || commRate < 0 || commRate > 50) return res.status(400).json({ error: 'Commission rate must be 0–50%.' });
+
   const calculatedCommission = calculateCommissionAmount(paidVal, commRate);
 
   member.status = 'active';
@@ -2366,7 +2420,7 @@ function processMemberActivation(targetId: string, payload: any, res: express.Re
 
   const payId = `pay_${Date.now()}`;
   const activator = profiles.find(p => p.id === actorId) || profiles.find(p => p.id === member.onboarded_by);
-  paymentHistory.unshift({
+  paymentHistory.unshift(normPayment({
     id: payId,
     member_id: member.id,
     amount: paidVal,
@@ -2376,7 +2430,7 @@ function processMemberActivation(targetId: string, payload: any, res: express.Re
     received_by: activator ? activator.id : member.onboarded_by,
     received_by_name: activator ? activator.full_name : member.trainer_name,
     created_at: new Date().toISOString()
-  });
+  }, 'new'));
 
   // Always write commission settlement row on activate (payroll truth)
   recordCommissionSettlementOnPayment(payId, member, paidVal, `Activation commission (${pkg})`);
@@ -2389,6 +2443,16 @@ function processMemberActivation(targetId: string, payload: any, res: express.Re
 }
 
 // Activate Member (Universal Endpoint)
+// Branch staff can't set their own commission rate or credit money/commission to someone else.
+app.use(['/api/members/activate', '/api/members/:id/activate', '/api/members/:id/payment', '/api/members/:id/renew'], (req, _res, next) => {
+  const s = (req as any).auth?.session;
+  if (req.method === 'POST' && s && !OWNER_SET.has(s.role) && req.body && typeof req.body === 'object') {
+    delete req.body.commission_rate; delete req.body.p_commission_rate;
+    for (const k of ['activated_by', 'p_actor_id', 'received_by', 'renewed_by', 'actor_id']) if (k in req.body || k === 'activated_by') req.body[k] = s.id;
+  }
+  next();
+});
+
 app.post('/api/members/activate', (req, res) => {
   const targetId = req.body?.p_member_id || req.body?.member_id || req.body?.id;
   if (!targetId) {
@@ -2440,7 +2504,7 @@ app.post('/api/members/:id/payment', (req, res) => {
     created_at: new Date().toISOString()
   };
 
-  paymentHistory.unshift(payRecord);
+  paymentHistory.unshift(normPayment(payRecord, 'balance'));
 
   // Write commission settlement row on payment
   recordCommissionSettlementOnPayment(payId, member, payVal, `Balance payment commission (${member.package_type})`);
@@ -2487,6 +2551,10 @@ app.post('/api/members/:id/renew', (req, res) => {
   const newPaidVal = amount_paid !== undefined ? parseFloat(amount_paid) : (pkgConfig.pricePerMonth * months);
   const newDueVal = balance_due !== undefined ? parseFloat(balance_due) : 0;
   const commRate = commission_rate !== undefined ? parseFloat(commission_rate) : pkgConfig.defaultCommissionRate;
+  if (!Number.isInteger(months) || months < 1 || months > 36) return res.status(400).json({ error: 'Subscription must be 1–36 months.' });
+  if (!Number.isFinite(newPaidVal) || newPaidVal < 0 || newPaidVal > 1000000) return res.status(400).json({ error: 'Amount paid must be between ₹0 and ₹10,00,000.' });
+  if (!Number.isFinite(newDueVal) || newDueVal < 0 || newDueVal > 1000000) return res.status(400).json({ error: 'Balance due must be between ₹0 and ₹10,00,000.' });
+  if (!Number.isFinite(commRate) || commRate < 0 || commRate > 50) return res.status(400).json({ error: 'Commission rate must be 0–50%.' });
 
   member.status = 'active';
   member.package_type = pkg;
@@ -2508,7 +2576,7 @@ app.post('/api/members/:id/renew', (req, res) => {
 
   const payId = `pay_${Date.now()}`;
   const renewer = profiles.find(p => p.id === renewed_by) || profiles[0];
-  paymentHistory.unshift({
+  paymentHistory.unshift(normPayment({
     id: payId,
     member_id: member.id,
     amount: newPaidVal,
@@ -2518,7 +2586,7 @@ app.post('/api/members/:id/renew', (req, res) => {
     received_by: renewer.id,
     received_by_name: renewer.full_name,
     created_at: new Date().toISOString()
-  });
+  }, 'renewal'));
 
   // Always write commission settlement row on renewal (payroll truth)
   recordCommissionSettlementOnPayment(payId, member, newPaidVal, `Renewal commission (${pkg} - ${months}m)`);
@@ -2646,48 +2714,156 @@ app.get('/api/attendance', (req, res) => {
   res.json(enriched);
 });
 
+app.get('/api/members/:id/pass', (req, res) => {
+  const member = members.find(m => m.id === req.params.id);
+  if (!member || member.is_archived) return res.status(404).json({ error: 'Member record not found' });
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({ ...issuePass(getSessionSecret(), member.id), member_id: member.id, full_name: member.full_name });
+});
+
+const CHECKIN_DEDUPE_MS = 3 * 60 * 60 * 1000;
 app.post('/api/attendance/check-in', (req, res) => {
   syncMemberExpiries();
-  const { member_id, checked_in_by, method, notes } = req.body;
+  const { member_id, qr_token, method, notes, override } = req.body || {};
+  const ctx = (req as any).auth as { session: Session; branchIds: string[] | null } | undefined;
 
-  if (!member_id) {
-    return res.status(400).json({ error: 'Member ID required for check-in' });
+  let member: Member | undefined;
+  if (qr_token) {
+    const v = verifyPass(getSessionSecret(), qr_token);
+    if (!v.ok) {
+      const msg = v.reason === 'EXPIRED' ? 'This pass has expired. Ask the member to reopen the Pulse app to refresh their QR.' :
+        v.reason === 'BAD_SIGNATURE' ? 'This QR code is not a valid Pulse pass.' : 'Not a Pulse member QR code.';
+      return res.status(400).json({ error: msg, code: `PASS_${v.reason}` });
+    }
+    member = members.find(m => m.id === v.memberId!);
+  } else if (typeof member_id === 'string' && member_id.trim()) {
+    const key = member_id.trim();
+    member = members.find(m => m.id === key);
+    if (!member) {
+      const digits = key.replace(/\D/g, '').slice(-10);
+      const hits = digits.length === 10 ? members.filter(m => m.phone === digits && !m.is_archived) : [];
+      if (hits.length > 1) return res.status(409).json({ error: `${hits.length} members share this phone (${hits.map(h => h.full_name).join(', ')}). Scan their QR or pick from the list.`, code: 'AMBIGUOUS_PHONE', candidates: hits.map(h => ({ id: h.id, full_name: h.full_name })) });
+      member = hits[0];
+    }
+  } else {
+    return res.status(400).json({ error: 'Scan a member QR or enter a member phone number', code: 'MISSING_MEMBER' });
   }
-
-  const member = members.find(m => m.id === member_id || m.phone === member_id);
-  if (!member) {
-    return res.status(404).json({ error: 'Member record not found' });
+  if (!member) return res.status(404).json({ error: 'No member found for that QR/phone', code: 'NOT_FOUND' });
+  if (ctx && ctx.branchIds && !ctx.branchIds.includes(member.branch_id)) {
+    return res.status(403).json({ error: `${member.full_name} belongs to another branch (${branches.find(b => b.id === member!.branch_id)?.name || member.branch_id})`, code: 'OTHER_BRANCH' });
   }
-
   if (member.is_archived) {
-    return res.status(400).json({ error: 'Cannot check in an archived member. Please restore member first.' });
+    return res.status(409).json({ error: 'Cannot check in an archived member. Please restore member first.', code: 'ARCHIVED' });
+  }
+  const recent = attendanceLogs.find(a => a.member_id === member!.id && Date.now() - new Date(a.checked_in_at).getTime() < CHECKIN_DEDUPE_MS);
+  if (recent) {
+    return res.status(409).json({ error: `${member.full_name} already checked in at ${new Date(recent.checked_in_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })}`, code: 'ALREADY_CHECKED_IN', record: recent, member });
+  }
+  const today = getTodayStr();
+  const expired = member.status === 'expired' || (!!member.end_date && member.end_date < today);
+  if (member.status === 'cancelled' || member.status === 'pending') {
+    if (!override) return res.status(409).json({ error: `${member.full_name}'s membership is ${member.status}. Activate it before check-in.`, code: 'MEMBERSHIP_INACTIVE', member });
+  }
+  if (expired && !override) {
+    return res.status(409).json({ error: `${member.full_name}'s membership expired${member.end_date ? ` on ${member.end_date}` : ''}. Renew, or allow a one-time entry.`, code: 'MEMBERSHIP_EXPIRED', member });
   }
 
-  const checker = profiles.find(p => p.id === checked_in_by) || profiles[0];
-
+  const checker = profiles.find(p => p.id === ctx?.session.id) || profiles[0];
   const record: AttendanceRecord = {
-    id: `att_${Date.now()}`,
+    id: `att_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
     member_id: member.id,
     member_name: member.full_name,
     member_package: member.package_type,
+    branch_id: member.branch_id,
     checked_in_at: new Date().toISOString(),
     checked_in_by: checker.id,
     checked_in_by_name: checker.full_name,
-    method: method || 'qr',
-    notes: notes || undefined
-  };
+    method: qr_token ? 'qr' : (method === 'manual' || method === 'qr' ? method : 'manual'),
+    notes: (override ? `[override${expired ? ': expired' : ''}] ` : '') + (typeof notes === 'string' ? notes.slice(0, 300) : '') || undefined
+  } as AttendanceRecord;
 
   attendanceLogs.unshift(record);
 
   // Auto-resolve stale attendance alerts upon QR/manual check-in
-  const staleAlerts = retentionAlerts.filter(a => a.member_id === member.id && !a.is_resolved && (a.alert_type === 'at_risk' || a.message?.toLowerCase().includes('absent') || a.message?.toLowerCase().includes('check-in')));
+  const staleAlerts = retentionAlerts.filter(a => a.member_id === member!.id && !a.is_resolved && (a.alert_type === 'at_risk' || a.message?.toLowerCase().includes('absent') || a.message?.toLowerCase().includes('check-in')));
   staleAlerts.forEach(a => {
     a.is_resolved = true;
     a.resolved_at = new Date().toISOString();
     a.resolved_by = checker.full_name;
   });
 
-  res.status(201).json({ success: true, record, member, auto_resolved_alerts: staleAlerts.length });
+  const warnings: string[] = [];
+  if (expired) warnings.push(`Membership expired${member.end_date ? ` on ${member.end_date}` : ''}`);
+  if ((Number(member.balance_due) || 0) > 0) warnings.push(`Balance due ₹${Number(member.balance_due).toLocaleString('en-IN')}`);
+  if (member.end_date && !expired) {
+    const days = Math.round((new Date(member.end_date).getTime() - new Date(today).getTime()) / 86400000);
+    if (days <= 7) warnings.push(`Membership ends in ${days} day${days === 1 ? '' : 's'}`);
+  }
+  res.status(201).json({ success: true, record, member, warnings, auto_resolved_alerts: staleAlerts.length });
+});
+
+// ---------- Personal training (PT) packages ----------
+const ptView = (p: PtPackage) => {
+  const used = p.sessions.length;
+  const today = getTodayStr();
+  return { ...p, sessions_used: used, sessions_left: Math.max(0, p.sessions_total - used), expired: !!p.expires_on && p.expires_on < today };
+};
+app.get('/api/pt-packages', (req, res) => {
+  const { member_id, trainer_id, branch_id, active } = req.query as Record<string, string | undefined>;
+  let list = ptPackages.map(ptView);
+  if (member_id) list = list.filter(p => p.member_id === member_id);
+  if (trainer_id) list = list.filter(p => p.trainer_id === trainer_id);
+  if (branch_id && branch_id !== 'all') list = list.filter(p => p.branch_id === branch_id);
+  if (active === '1') list = list.filter(p => p.sessions_left > 0 && !p.expired);
+  list.sort((a, b) => b.purchased_at.localeCompare(a.purchased_at));
+  res.json({ packages: list, total: list.length });
+});
+app.post('/api/pt-packages', (req, res) => {
+  const { member_id, trainer_id, sessions_total, price, expires_on, notes } = req.body || {};
+  const member = members.find(m => m.id === member_id && !m.is_archived);
+  if (!member) return res.status(404).json({ error: 'Pick an existing (non-archived) member' });
+  const trainer = profiles.find(p => p.id === trainer_id && (p.role === 'trainer' || p.role === 'branch_manager' || p.role === 'owner' || p.role === 'super_owner'));
+  if (!trainer) return res.status(400).json({ error: 'Pick a trainer for this PT package' });
+  if (!OWNER_SET.has(trainer.role) && !staffBranchIds(trainer).includes(member.branch_id)) return res.status(400).json({ error: `${trainer.full_name} does not work at this member's branch` });
+  const total = Number(sessions_total);
+  if (!Number.isInteger(total) || total < 1 || total > 200) return res.status(400).json({ error: 'Sessions must be a whole number between 1 and 200' });
+  const amt = price === undefined || price === '' ? 0 : Number(price);
+  if (!Number.isFinite(amt) || amt < 0 || amt > 1000000) return res.status(400).json({ error: 'Price must be between ₹0 and ₹10,00,000' });
+  if (expires_on !== undefined && expires_on !== '' && (typeof expires_on !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(expires_on) || isNaN(Date.parse(expires_on)))) return res.status(400).json({ error: 'Expiry must be a valid date (YYYY-MM-DD)' });
+  if (expires_on && expires_on < getTodayStr()) return res.status(400).json({ error: 'Expiry date is in the past' });
+  const actor = (req as any).auth?.session?.id || 'system';
+  const pkg: PtPackage = {
+    id: `pt_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+    member_id: member.id, member_name: member.full_name, branch_id: member.branch_id,
+    trainer_id: trainer.id, trainer_name: trainer.full_name, sessions_total: total, price: Math.round(amt),
+    purchased_at: new Date().toISOString(), expires_on: expires_on || undefined,
+    notes: typeof notes === 'string' && notes.trim() ? notes.trim().slice(0, 300) : undefined, sessions: [], created_by: actor,
+  };
+  ptPackages.unshift(pkg);
+  auditLogs.unshift({ id: `aud_${Date.now()}`, actor_id: actor, user_name: profiles.find(p => p.id === actor)?.full_name || actor, action: 'pt.package.create', entity_type: 'pt_package', entity_id: pkg.id, created_at: new Date().toISOString() } as any);
+  res.status(201).json({ package: ptView(pkg) });
+});
+app.post('/api/pt-packages/:id/sessions', (req, res) => {
+  const pkg = ptPackages.find(p => p.id === req.params.id);
+  if (!pkg) return res.status(404).json({ error: 'PT package not found' });
+  const v = ptView(pkg);
+  if (v.expired) return res.status(409).json({ error: `This PT package expired on ${pkg.expires_on}`, code: 'PT_EXPIRED' });
+  if (v.sessions_left <= 0) return res.status(409).json({ error: 'No PT sessions left in this package', code: 'PT_EXHAUSTED' });
+  const sid = (req as any).auth?.session?.id;
+  const by = profiles.find(p => p.id === sid) || profiles.find(p => p.id === pkg.trainer_id)!;
+  const last = pkg.sessions[pkg.sessions.length - 1];
+  if (last && Date.now() - new Date(last.at).getTime() < 30 * 60 * 1000) return res.status(409).json({ error: 'A session was already logged in the last 30 minutes', code: 'PT_DUPLICATE' });
+  const notes = typeof req.body?.notes === 'string' ? req.body.notes.trim().slice(0, 300) : '';
+  pkg.sessions.push({ id: `pts_${Date.now()}`, at: new Date().toISOString(), trainer_id: by.id, trainer_name: by.full_name, notes: notes || undefined });
+  res.status(201).json({ package: ptView(pkg) });
+});
+app.delete('/api/pt-packages/:id/sessions/:sid', (req, res) => {
+  const pkg = ptPackages.find(p => p.id === req.params.id);
+  if (!pkg) return res.status(404).json({ error: 'PT package not found' });
+  const before = pkg.sessions.length;
+  pkg.sessions = pkg.sessions.filter(x => x.id !== req.params.sid);
+  if (pkg.sessions.length === before) return res.status(404).json({ error: 'Session not found' });
+  res.json({ package: ptView(pkg) });
 });
 
 // Staff Attendance REST Endpoints
@@ -2979,7 +3155,12 @@ app.get('/api/payroll-lines', (req, res) => {
   }
 
   list.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-  res.json(list);
+  // Older entries (e.g. logins, PIN changes) only carry actor_id: fill in who did it.
+  res.json(list.map((l: any) => {
+    if (l.user_name) return l;
+    const who = profiles.find(p => p.id === l.actor_id) || members.find(m => m.id === l.actor_id);
+    return { ...l, user_name: who?.full_name || l.actor_id || 'System', user_role: (who as any)?.role || (who ? 'member' : 'system') };
+  }));
 });
 
 // Commission Settlements API (Legacy backwards-compatible)
@@ -3158,7 +3339,7 @@ app.post('/api/payments', (req, res) => {
     created_at: new Date().toISOString()
   };
 
-  paymentHistory.unshift(payRecord);
+  paymentHistory.unshift(normPayment(payRecord, undefined));
   recordCommissionSettlementOnPayment(payId, member, payVal, `Payment top-up settlement`);
 
   res.status(201).json({ success: true, payment: payRecord, member });
@@ -3789,6 +3970,7 @@ app.post('/api/branches/:id/sms-config', (req, res) => {
 
   const last4 = key.slice(-4);
   const vaultSecretId = `vsec_${id}_${Date.now()}`;
+  vault.put(vaultSecretId, key);
   const vaultSecretName = `msg91_branch_${id}_${Date.now()}`;
   const existing = branchSmsConfigs[id];
 
@@ -3891,6 +4073,7 @@ app.post('/api/branches/:id/sms-config/retire-previous', (req, res) => {
   }
 
   const oldLast4 = cfg.previous_msg91_last4;
+  vault.remove(cfg.previous_vault_secret_id);
   cfg.previous_vault_secret_id = null;
   cfg.previous_vault_secret_name = null;
   cfg.previous_msg91_last4 = null;
@@ -4104,6 +4287,8 @@ app.post('/api/rpc/:fn', (req, res) => {
         return res.status(400).json({ error: 'Invalid key length', code: 'INVALID_MSG91_KEY' });
       }
       const last4 = p_new_auth_key.slice(-4);
+      const rpcVaultId = `vsec_${p_branch_id}_${Date.now()}`;
+      vault.put(rpcVaultId, String(p_new_auth_key));
       const existing = branchSmsConfigs[p_branch_id];
       branchSmsConfigs[p_branch_id] = {
         ...existing,
@@ -4111,7 +4296,7 @@ app.post('/api/rpc/:fn', (req, res) => {
         previous_vault_secret_id: existing?.vault_secret_id || null,
         previous_vault_secret_name: existing?.vault_secret_name || null,
         previous_msg91_last4: existing?.msg91_last4 || null,
-        vault_secret_id: `vsec_${p_branch_id}_${Date.now()}`,
+        vault_secret_id: rpcVaultId,
         vault_secret_name: `msg91_branch_${p_branch_id}_${Date.now()}`,
         msg91_last4: last4,
         msg91_sender_id: p_sender_id || existing?.msg91_sender_id || 'PULSEF',
@@ -4299,7 +4484,7 @@ app.post('/api/rpc/:fn', (req, res) => {
       let monthTotal = 0;
 
       for (const p of relevantPayments) {
-        const pDate = p.entry_date || p.created_at.slice(0, 10);
+        const pDate = p.entry_date || gymDate(Date.parse(p.created_at));
         const amt = Number(p.amount) || 0;
         if (pDate === targetDay) {
           dayTotal += amt;
@@ -4324,7 +4509,7 @@ app.post('/api/rpc/:fn', (req, res) => {
       const targetDay = p_day || getTodayStr();
 
       let dayPayments = paymentHistory.filter(p => {
-        const pDate = p.entry_date || p.created_at.slice(0, 10);
+        const pDate = p.entry_date || gymDate(Date.parse(p.created_at));
         if (pDate !== targetDay) return false;
         if (p_branch_id && p_branch_id !== 'all' && p.branch_id !== p_branch_id) return false;
         return true;
@@ -4683,7 +4868,7 @@ app.post('/api/rpc/:fn', (req, res) => {
           received_by_name: 'Bipin Amrutha',
           created_at: new Date().toISOString()
         };
-        paymentHistory.unshift(payRecord);
+        paymentHistory.unshift(normPayment(payRecord, undefined));
 
         // Commission & Winback triggers
         if (amount > 0) {
@@ -5108,7 +5293,7 @@ app.post('/api/rpc/:fn', (req, res) => {
           created_at: new Date().toISOString()
         };
 
-        paymentHistory.unshift(payRecord);
+        paymentHistory.unshift(normPayment(payRecord, undefined));
         if (amt > 0) {
           recordCommissionSettlementOnPayment(payId, targetMember, amt, `Bulk Payment Import [${etype}]`);
         }
@@ -5140,14 +5325,18 @@ app.get('/api/balance-reminders/targets', (req, res) => {
   const cooldownMs = cooldownDays * 86400000;
 
   const targets: BalanceReminderTarget[] = [];
+  const invalidPhone: any[] = [];
+  let inCooldown = 0;
+  let totalOutstanding = 0;
   for (const m of members) {
     if (m.is_archived) continue;
     if (branch_id && branch_id !== 'all' && m.branch_id !== branch_id) continue;
     const bal = Number(m.balance_due) || 0;
     if (bal < minBal) continue;
+    totalOutstanding += bal;
 
     const p10 = phone10(m.phone);
-    if (!p10) continue;
+    if (!p10) { invalidPhone.push({ member_id: m.id, full_name: m.full_name, phone: m.phone, balance_due: bal, branch_id: m.branch_id }); continue; }
 
     const sentLogs = balanceReminderLogs.filter(l => l.member_id === m.id && l.status === 'sent');
     let lastSentAt: string | null = null;
@@ -5157,6 +5346,7 @@ app.get('/api/balance-reminders/targets', (req, res) => {
       );
       lastSentAt = latest.created_at;
       if (now - new Date(lastSentAt).getTime() < cooldownMs) {
+        inCooldown++;
         continue;
       }
     }
@@ -5185,7 +5375,7 @@ app.get('/api/balance-reminders/targets', (req, res) => {
   }
 
   targets.sort((a, b) => b.balance_due - a.balance_due);
-  res.json({ targets, count: targets.length });
+  res.json({ targets, count: targets.length, invalid_phone: invalidPhone, in_cooldown: inCooldown, cooldown_days: cooldownDays, total_outstanding: totalOutstanding });
 });
 
 // POST /api/balance-reminders/log
@@ -5207,9 +5397,10 @@ app.post('/api/balance-reminders/log', (req, res) => {
     outcome: outcome || (promised_date ? 'promised' : undefined),
     promised_date: promised_date || undefined,
     error_message: error_message || undefined,
-    actor_id: actor_id || undefined,
+    actor_id: (req as any).auth?.session?.id || actor_id || undefined,
     created_at: new Date().toISOString()
   };
+  if (!mem) return res.status(404).json({ error: 'Member not found' });
 
   balanceReminderLogs.unshift(logRecord);
 
@@ -5255,7 +5446,7 @@ app.get('/api/sales-totals', (req, res) => {
   let monthTotal = 0;
 
   for (const p of relevantPayments) {
-    const pDate = p.entry_date || p.created_at.slice(0, 10);
+    const pDate = p.entry_date || gymDate(Date.parse(p.created_at));
     const amt = Number(p.amount) || 0;
     if (pDate === targetDay) {
       dayTotal += amt;
@@ -5281,7 +5472,7 @@ app.get('/api/shift-close-totals', (req, res) => {
   const targetDay = (typeof day === 'string' && day) ? day : getTodayStr();
 
   const dayPayments = paymentHistory.filter(p => {
-    const pDate = p.entry_date || p.created_at.slice(0, 10);
+    const pDate = p.entry_date || gymDate(Date.parse(p.created_at));
     if (pDate !== targetDay) return false;
     if (branch_id && branch_id !== 'all' && p.branch_id !== branch_id) return false;
     return true;
@@ -5455,7 +5646,7 @@ app.get('/api/day-register', (req, res) => {
 
   // Find all payment records on target date
   let dayPayments = paymentHistory.filter(p => {
-    const pDate = p.entry_date || p.created_at.slice(0, 10);
+    const pDate = p.entry_date || gymDate(Date.parse(p.created_at));
     return pDate === targetDate;
   });
 
@@ -5485,7 +5676,7 @@ app.get('/api/day-register', (req, res) => {
       list_price: p.list_price,
       balance_after: p.balance_after !== undefined ? p.balance_after : (mem?.balance_due || 0),
       notes: p.notes,
-      entry_date: p.entry_date || p.created_at.slice(0, 10),
+      entry_date: p.entry_date || gymDate(Date.parse(p.created_at)),
       branch_id: p.branch_id || mem?.branch_id,
       branch_name: branch?.name || mem?.branch_name,
       created_at: p.created_at
@@ -6304,7 +6495,7 @@ app.post('/api/autodebit/charge-mandate', (req, res) => {
     created_at: new Date().toISOString(),
   };
 
-  paymentHistory.unshift(paymentRecord);
+  paymentHistory.unshift(normPayment(paymentRecord, undefined));
 
   // Write commission settlement row on successful auto-debit
   recordCommissionSettlementOnPayment(paymentRecord.id, member, chargeAmount, 'UPI AutoPay Recurring Charge');
@@ -6843,8 +7034,9 @@ app.delete('/api/members/:id', (req, res) => {
 });
 
 // Durable storage: snapshot all collections to a JSON file (DATA_DIR) and restore on boot
-var persistence: ReturnType<typeof createPersistence> | null = null;
-persistence = createPersistence({
+var persistence: (ReturnType<typeof createPersistence> | ReturnType<typeof createSqliteStore>) | null = null;
+const makeStore: any = process.env.STORAGE === 'json' ? createPersistence : createSqliteStore;
+persistence = makeStore({
   dataDir: process.env.DATA_DIR || (isProduction() ? '/data' : path.join(process.cwd(), '.data')),
   enabled: process.env.PERSISTENCE !== 'off',
   snapshot: () => ({
@@ -6877,7 +7069,11 @@ persistence = createPersistence({
     balanceReminderSettings,
     branchRotationLogs,
     msg91DltTemplates,
-    branchSmsConfigs
+    branchSmsConfigs,
+    pinHashes,
+    banners,
+    secretVault,
+    ptPackages,
   }),
   restore: (data: any) => {
     if (data.branches !== undefined) branches = data.branches;
@@ -6912,11 +7108,15 @@ persistence = createPersistence({
     if (data.branchSmsConfigs !== undefined) branchSmsConfigs = data.branchSmsConfigs;
     if (data.pinHashes !== undefined) pinHashes = data.pinHashes;
     if (data.banners !== undefined) banners = data.banners;
+    if (data.secretVault !== undefined) secretVault = data.secretVault;
+    if (Array.isArray(data.ptPackages)) ptPackages = data.ptPackages;
   },
 });
 persistence.load();
+paymentHistory.forEach((p) => normPayment(p));
 seedPins();
 getSessionSecret();
+getSecretsKey();
 
 // Start Server with Vite Middleware
 async function startServer() {
@@ -6953,13 +7153,20 @@ async function startServer() {
 
   app.use(errorHandler);
 
-  const server = app.listen(PORT, HOST, () => {
-    console.log(`Pulse Fitness Phase 2 Server running at http://${HOST}:${PORT}`);
-  });
+  // Optional built-in HTTPS (e.g. self-signed cert for phones on the gym LAN: camera + service worker need HTTPS).
+  const certFile = process.env.HTTPS_CERT, keyFile = process.env.HTTPS_KEY;
+  const server = certFile && keyFile
+    ? (await import('https')).createServer({ cert: fs.readFileSync(certFile), key: fs.readFileSync(keyFile) }, app).listen(PORT, HOST, () => {
+        console.log(`Pulse Fitness server running at https://${HOST}:${PORT} (HTTPS, cert ${path.basename(certFile)})`);
+      })
+    : app.listen(PORT, HOST, () => {
+        console.log(`Pulse Fitness Phase 2 Server running at http://${HOST}:${PORT}`);
+      });
 
   const shutdown = (signal: string) => {
     console.log(`[shutdown] ${signal} received, flushing data`);
     persistence?.flush();
+    (persistence as any)?.close?.();
     server.close(() => process.exit(0));
     setTimeout(() => process.exit(0), 5000).unref();
   };
@@ -6968,6 +7175,8 @@ async function startServer() {
 }
 
 export { app };
+/** Test-only access to the in-memory working set (undefined outside vitest). */
+export const __testState = process.env.VITEST ? { get members() { return members; } } : undefined;
 
 if (process.env.VITEST) {
   app.use('/api', (_req, res) => res.status(404).json({ error: 'Not found' }));
