@@ -138,6 +138,16 @@ app.post('/api/auth/login', (req, res) => {
   let hit: (typeof candidates)[number] | null = null;
   for (const c of candidates) if (verifyPin(pin, pinHashes[c.id]) && !hit) hit = c;
   if (!candidates.length) verifyPin(pin, hashPin('0000'));
+  if (!hit && candidates.length && candidates.every((c) => !pinHashes[c.id])) {
+    loginThrottle.fail(acctKey);
+    const memberOnly = candidates.every((c) => c.kind === 'member');
+    return res.status(403).json({
+      error: memberOnly
+        ? 'Your account does not have a PIN yet. Please ask the front desk at your branch to set one for you.'
+        : 'No PIN has been set for this account yet. Please ask the owner to set one.',
+      code: 'NO_PIN',
+    });
+  }
   if (!hit) {
     loginThrottle.fail(acctKey);
     loginThrottle.fail(ipKey);
@@ -160,6 +170,20 @@ app.use(
     sessionValid: (s) => !!sessionProfile(s) && (s.kind !== 'member' || isMemberActiveAccount(members.find((m) => m.id === s.id))) && s.pv === pinVersion(s.id) && !!pinHashes[s.id],
     branchIdsFor: (s) => (s.role === 'super_owner' || s.role === 'owner' ? null : s.kind === 'member' ? [] : staffBranchIds(profiles.find((p) => p.id === s.id))),
     memberBranch: (id) => members.find((m) => m.id === id)?.branch_id,
+    entityBranch: (p) => {
+      const mb = (id?: string) => (id ? members.find((m) => m.id === id)?.branch_id : undefined);
+      let m: RegExpMatchArray | null;
+      if ((m = p.match(/^\/api\/freeze-requests\/([^/]+)$/))) { const r = freezeRequests.find((x) => x.id === m![1]); return r ? r.branch_id || mb(r.member_id) || '' : undefined; }
+      if ((m = p.match(/^\/api\/leads\/([^/]+)(\/convert)?$/))) { const r = leads.find((x) => x.id === m![1]); return r ? r.branch_id || '' : undefined; }
+      if ((m = p.match(/^\/api\/retention\/alerts\/([^/]+)\/resolve$/))) { const r = retentionAlerts.find((x) => x.id === m![1]); return r ? r.branch_id || mb(r.member_id) || '' : undefined; }
+      if ((m = p.match(/^\/api\/winback\/enrollments\/([^/]+)/))) { const r = winbackEnrollments.find((x) => x.id === m![1]); return r ? r.branch_id || mb(r.member_id) || '' : undefined; }
+      return undefined;
+    },
+    entityOwner: (p) => {
+      const m = p.match(/^\/api\/notifications\/([^/]+)\/read$/);
+      if (!m) return undefined;
+      return staffNotifications.find((n) => n.id === m[1])?.user_id;
+    },
   })
 );
 

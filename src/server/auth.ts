@@ -105,6 +105,10 @@ export interface AuthzContext {
   session: Session;
   branchIds: string[] | null; // null = all branches
   memberBranch: (memberId: string) => string | undefined;
+  /** Branch of the record addressed by ID in the path (freeze, lead, alert, enrollment...). undefined = not an entity route / not found. */
+  entityBranch?: (path: string) => string | undefined;
+  /** Owner (user id) of a per-user record addressed in the path (e.g. notifications). */
+  entityOwner?: (path: string) => string | undefined;
 }
 type Rule = [method: string, path: RegExp];
 const R = (m: string, p: string): Rule => [m, new RegExp(`^${p}$`)];
@@ -119,6 +123,10 @@ const MANAGER_DENY: Rule[] = [
   R('*', '/api/branches/[^/]+/sms-config(/.*)?'), R('*', '/api/dlt-templates(/.*)?'),
   R('*', '/api/rpc/.*'), R('*', '/v1/.*'), R('POST', '/api/automation-rules'),
   R('POST', '/api/banners(/.*)?'), R('PUT', '/api/banners/.*'),
+  // Global (all-branch) actions
+  R('POST', '/api/winback/(campaigns|run)'), R('POST', '/api/automations/run'), R('POST', '/api/churn/refresh'),
+  R('POST', '/api/retention/(calculate-risk|flag-stale)'), R('PUT', '/api/balance-reminders/settings'), R('POST', '/api/balance-reminders/digest'),
+  R('POST', '/api/contacts/quick-dump'),
 ];
 
 const TRAINER_ALLOW: Rule[] = [
@@ -177,6 +185,10 @@ export function authorize(ctx: AuthzContext, method: string, path: string, body:
 
   // trainer / branch_manager: branch scope
   const allowed = ctx.branchIds || [];
+  const owner = ctx.entityOwner?.(path);
+  if (owner !== undefined && owner !== session.id) return 'That record belongs to someone else';
+  const eb = ctx.entityBranch?.(path);
+  if (eb !== undefined && !allowed.includes(eb)) return 'That record is outside your branch';
   for (const id of memberIds) {
     const br = ctx.memberBranch(id);
     if (!br || !allowed.includes(br)) return 'Member is outside your branch';
@@ -238,6 +250,8 @@ export function createAuthMiddleware(resolve: {
   sessionValid: (s: Session) => boolean;
   branchIdsFor: (s: Session) => string[] | null;
   memberBranch: (id: string) => string | undefined;
+  entityBranch?: (path: string) => string | undefined;
+  entityOwner?: (path: string) => string | undefined;
 }): RequestHandler {
   return (req: Request, res: Response, next: NextFunction) => {
     const path = req.originalUrl.split('?')[0];
@@ -253,7 +267,7 @@ export function createAuthMiddleware(resolve: {
     if (!session || !resolve.sessionValid(session)) {
       return res.status(401).json({ error: 'Login required', code: 'AUTH_REQUIRED' });
     }
-    const ctx: AuthzContext = { session, branchIds: resolve.branchIdsFor(session), memberBranch: resolve.memberBranch };
+    const ctx: AuthzContext = { session, branchIds: resolve.branchIdsFor(session), memberBranch: resolve.memberBranch, entityBranch: resolve.entityBranch, entityOwner: resolve.entityOwner };
     (req as any).auth = ctx;
     const denied = authorize(ctx, req.method, path, req.body, req.query);
     if (denied) return res.status(403).json({ error: denied, code: 'FORBIDDEN' });
@@ -261,6 +275,14 @@ export function createAuthMiddleware(resolve: {
     if ((session.role === 'trainer' || session.role === 'branch_manager') && req.method === 'POST' && req.body && typeof req.body === 'object' &&
         /^\/api\/(members|leads|contacts\/parse-preview)$/.test(path) && (!req.body.branch_id || req.body.branch_id === 'auto' || req.body.branch_id === 'all')) {
       req.body.branch_id = (ctx.branchIds || [])[0];
+    }
+    // Summary/report endpoints: scoped staff always get their own branch's numbers
+    if ((session.role === 'trainer' || session.role === 'branch_manager') && req.method === 'GET') {
+      const q: any = req.query;
+      for (const key of ['branch_id', 'p_branch_id']) {
+        if (q[key] === 'all') delete q[key];
+      }
+      if (!q.branch_id && !q.p_branch_id && ctx.branchIds && ctx.branchIds.length) q.branch_id = ctx.branchIds[0];
     }
     if (!OWNER_ROLES.includes(session.role)) {
       const json = res.json.bind(res);
