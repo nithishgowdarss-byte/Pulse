@@ -78,3 +78,19 @@ Keep `SESSION_SECRET` and `SECRETS_KEY` the same across restarts: changing `SECR
   camera access (QR check-in) is blocked, and the production session cookie is `Secure`, so login won't stick.
   Put Caddy or nginx in front with a certificate (e.g. `caddy reverse-proxy --from pulse.example.in --to 127.0.0.1:3000`)
   and set `TRUST_PROXY=1`. Only for a short LAN trial over HTTP can you set `COOKIE_INSECURE=1` (not for production).
+- Without HTTPS the **Desk → Check-in** camera shows "The camera only works over HTTPS"; phone-number check-in still works.
+  Members' QR passes still display over HTTP (verified from the LAN IP in Playwright).
+
+## Front desk (Desk button: owners, managers, trainers)
+
+- **QR check-in.** Every member's Digital Pass shows a signed QR (HMAC, valid 24 h, refreshed automatically and cached for
+  offline display). Staff tap **Desk → Start camera** and point it at the member's phone, or type the member's phone number.
+  The server verifies the signature and branch scope, blocks repeat check-ins within 3 h, and refuses expired or inactive
+  memberships unless staff tap **Allow one-time entry** (recorded as an override). It also shows warnings for dues and memberships
+  ending soon. Members can't check themselves in. Note that a screenshot of a pass works until it expires; the 3-hour dedupe limits sharing.
+- **Dues** (owners/managers). This tab lists members with a balance. **WhatsApp** opens a prefilled `wa.me` message (free, no API key)
+  and logs the reminder with a 3-day cooldown. Members whose phone number is invalid are listed separately rather than dropped. You can export a CSV.
+- **PT sessions.** Owners and managers sell PT packages (sessions, price, optional expiry, trainer from the member's branch).
+  Trainers log sessions (no double-logging within 30 min). Managers and owners can undo the last session, and members see
+  the sessions they have left on their pass. You can export a CSV.
+- All CSV exports neutralise spreadsheet formulas (`=`, `+`, `-`, `@`).
