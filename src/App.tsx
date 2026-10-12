@@ -21,6 +21,7 @@ import { Profile, Member, UserRole, PlanPackage, PaymentMethod, Branch } from '.
 import { safeFetchJson } from './lib/apiUtils';
 import { LoginScreen } from './components/LoginScreen';
 import { PinManagementModal } from './components/PinManagementModal';
+import { BannerStudioModal } from './components/BannerStudioModal';
 import { installAuthInterceptor, fetchMe, logout, AUTH_REQUIRED_EVENT } from './lib/auth';
 
 installAuthInterceptor();
@@ -60,6 +61,7 @@ export default function App() {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [authChecked, setAuthChecked] = useState<boolean>(false);
   const [showPinModal, setShowPinModal] = useState<boolean>(false);
+  const [showBannerStudio, setShowBannerStudio] = useState<boolean>(false);
 
   // Fetch initial gym state
   const fetchData = async () => {
@@ -279,6 +281,7 @@ export default function App() {
         onViewModeChange={changeView}
         onLogout={handleLogout}
         onOpenPins={currentProfile.role === 'super_owner' ? () => setShowPinModal(true) : undefined}
+        onOpenBannerStudio={currentProfile.role === 'super_owner' || currentProfile.role === 'owner' ? () => setShowBannerStudio(true) : undefined}
         currentProfile={currentProfile}
         profiles={profiles}
         branches={branches}
@@ -350,6 +353,7 @@ export default function App() {
 
 
       {showPinModal && <PinManagementModal onClose={() => setShowPinModal(false)} />}
+      {showBannerStudio && <BannerStudioModal branches={branches} onClose={() => setShowBannerStudio(false)} />}
 
       {/* Multi-Branch Management Modal */}
       {showBranchManager && (

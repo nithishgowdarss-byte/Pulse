@@ -40,3 +40,13 @@ SESSION_SECRET=$(openssl rand -hex 32) SUPER_OWNER_PIN=<pin> npm start   # binds
 npm test        # vitest: API, authz, persistence, validation
 ```
 Docker: `docker build -t pulse . && docker run -p 3000:3000 -v pulse-data:/data -e SESSION_SECRET=... -e SUPER_OWNER_PIN=... pulse`
+
+## Banner Studio (super owner + owner only)
+
+Header → **Banners**. Make shareable posters for marathons, games, events, offers, ads and festival wishes
+(Diwali, Ugadi, Sankranti, Ganesh Chaturthi, Dasara, Kannada Rajyotsava, Christmas, New Year, Holi).
+Copy comes from AI (Gemini, then local FreeLLMAPI) with an offline English + Kannada template fallback, and you can edit it.
+Banners are drawn in the browser on a canvas at 1080×1920 (story) or 1080×1080 (post) with Pulse branding and branch phone numbers.
+You can download a PNG, share it (Web Share API, or wa.me text as a fallback), and save it to history on the server.
+Members and staff only see active offers and events for their own branch (Member app → Notice). Only owners can create or edit banners;
+the server enforces this, so branch managers, trainers and members get 403.

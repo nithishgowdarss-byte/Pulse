@@ -118,10 +118,11 @@ const MANAGER_DENY: Rule[] = [
   R('POST', '/api/branches'), R('PUT', '/api/branches/[^/]+'),
   R('*', '/api/branches/[^/]+/sms-config(/.*)?'), R('*', '/api/dlt-templates(/.*)?'),
   R('*', '/api/rpc/.*'), R('*', '/v1/.*'), R('POST', '/api/automation-rules'),
+  R('POST', '/api/banners(/.*)?'), R('PUT', '/api/banners/.*'),
 ];
 
 const TRAINER_ALLOW: Rule[] = [
-  R('GET', '/api/(announcements|attendance|members|trainers|profiles|branches|day-register|notifications|freeze-requests|crm-activities|leads|churn/predictions|trainer-payroll|payroll/lines|payroll-lines|commission-settlements|staff-attendance|freellmapi/status)'),
+  R('GET', '/api/(banners|announcements|attendance|members|trainers|profiles|branches|day-register|notifications|freeze-requests|crm-activities|leads|churn/predictions|trainer-payroll|payroll/lines|payroll-lines|commission-settlements|staff-attendance|freellmapi/status)'),
   R('GET', '/api/members/[^/]+/(measurements|payments)'),
   R('GET', '/api/retention/(alerts|stale-members|churn-risk-distribution|risk-score/[^/]+)'),
   R('GET', '/api/staff-attendance/open-shift/[^/]+'),
@@ -134,7 +135,7 @@ const TRAINER_ALLOW: Rule[] = [
 ];
 
 const MEMBER_ALLOW: Rule[] = [
-  R('GET', '/api/(members|announcements|branches|attendance|freeze-requests|trainers)'),
+  R('GET', '/api/(members|announcements|banners|branches|attendance|freeze-requests|trainers)'),
   R('GET', '/api/members/[^/]+/(measurements|payments)'),
   R('POST', '/api/members/[^/]+/freeze'),
   R('POST', '/api/freeze-requests'),

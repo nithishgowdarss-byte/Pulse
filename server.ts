@@ -39,6 +39,7 @@ import {
   DayRegisterSummary
 } from './src/types';
 import { PACKAGE_CONFIGS } from './src/lib/membership';
+import { BANNER_TYPES, THEMES, FESTIVALS, templateCopy, parseAiCopy, bannerPrompt, BannerInput, BannerCopy } from './src/lib/bannerTemplates';
 import { getDefaultCommissionRate, calculateCommissionAmount } from './src/lib/commission';
 import { evaluateAutomations, DEFAULT_AUTOMATION_RULES } from './src/lib/automationEngine';
 import {
@@ -87,6 +88,7 @@ app.use('/api', createRateLimiter({ windowMs: 60_000, max: Number(process.env.AP
 // ---------------- Authentication (per-person PIN) ----------------
 // PIN hashes live apart from profiles/members so they are never returned by list endpoints.
 let pinHashes: Record<string, string> = {};
+const OWNER_SET = new Set(['super_owner', 'owner']);
 const DEV_PINS: Record<string, string> = {
   usr_super_1: '1111', usr_owner_1: '2222', usr_manager_1: '3333',
   usr_trainer_1: '4444', usr_trainer_2: '4444', usr_trainer_3: '4444', usr_trainer_4: '4444', usr_trainer_5: '4444',
@@ -6707,6 +6709,97 @@ Branch: ${branchName}`,
   }
 });
 
+
+// ---------------- Banner Studio (owners create; staff & members view active ones) ----------------
+interface BannerRecord {
+  id: string; type: string; title: string; festival?: string; date?: string; venue?: string; offer?: string; price?: string;
+  branch_ids: string[]; theme: string; language: 'en' | 'kn' | 'both'; copy: BannerCopy;
+  status: 'active' | 'archived'; visible_to_members: boolean; valid_until?: string;
+  copy_source: 'ai' | 'template'; created_by: string; created_by_name: string; created_at: string;
+}
+let banners: BannerRecord[] = [];
+const str = (v: unknown, n: number) => (typeof v === 'string' ? v.trim().slice(0, n) : '');
+
+function readBannerInput(b: any): { input?: BannerInput & { theme: string; branch_ids: string[] }; error?: string } {
+  if (!BANNER_TYPES.includes(b?.type)) return { error: `type must be one of ${BANNER_TYPES.join(', ')}` };
+  const theme = THEMES.includes(b.theme) ? b.theme : 'pulse';
+  const festival = b.type === 'festival' ? (b.festival in FESTIVALS ? b.festival : null) : undefined;
+  if (festival === null) return { error: `festival must be one of ${Object.keys(FESTIVALS).join(', ')}` };
+  const branch_ids = Array.isArray(b.branch_ids) && b.branch_ids.length ? b.branch_ids.filter((x: any) => branches.some((br) => br.id === x)) : branches.map((br) => br.id);
+  if (!branch_ids.length) return { error: 'Pick at least one valid branch' };
+  const language = ['en', 'kn', 'both'].includes(b.language) ? b.language : 'en';
+  return {
+    input: {
+      type: b.type, title: str(b.title, 80), festival: festival || undefined, date: str(b.date, 60), venue: str(b.venue, 100),
+      offer: str(b.offer, 100), price: str(b.price, 30), language, theme, branch_ids,
+      branchNames: branch_ids.map((id: string) => branches.find((br) => br.id === id)?.name.replace('Pulse Fitness - ', '') || id),
+    },
+  };
+}
+
+app.post('/api/banners/copy', async (req, res) => {
+  const { input, error } = readBannerInput(req.body);
+  if (!input) return res.status(400).json({ error });
+  const fallback = templateCopy(input);
+  if (req.body?.useAi === false) return res.json({ copy: fallback, source: 'template' });
+  try {
+    const completion = await executeFreeLLMCompletion([
+      { role: 'system', content: 'You are a concise bilingual (English/Kannada) marketing copywriter for an Indian gym. Output strict JSON only.' },
+      { role: 'user', content: bannerPrompt(input) },
+    ]);
+    const ai = completion.model !== 'pulse-local-smart-engine' ? parseAiCopy(completion.content) : null;
+    if (ai) {
+      if (!ai.kn) ai.kn = fallback.kn;
+      return res.json({ copy: ai, source: 'ai', model: completion.model });
+    }
+  } catch (err: any) {
+    console.warn('[banners] AI copy failed, using template:', err?.message);
+  }
+  res.json({ copy: fallback, source: 'template' });
+});
+
+app.get('/api/banners', (req, res) => {
+  const s: Session = (req as any).auth.session;
+  const today = getTodayStr();
+  if (OWNER_SET.has(s.role)) return res.json(banners);
+  // Staff & members: only active, member-visible, unexpired banners for their branch
+  const branchId = s.kind === 'member' ? members.find((m) => m.id === s.id)?.branch_id : profiles.find((p) => p.id === s.id)?.branch_id;
+  res.json(
+    banners.filter((b) => b.status === 'active' && b.visible_to_members && (!b.valid_until || b.valid_until >= today) && (!branchId || b.branch_ids.includes(branchId)))
+  );
+});
+
+app.post('/api/banners', (req, res) => {
+  const { input, error } = readBannerInput(req.body);
+  if (!input) return res.status(400).json({ error });
+  const c = req.body?.copy;
+  const copy: BannerCopy = c && typeof c === 'object' && str(c.headline, 80)
+    ? { headline: str(c.headline, 80), subline: str(c.subline, 110), body: str(c.body, 260), cta: str(c.cta, 50),
+        kn: c.kn && typeof c.kn === 'object' ? { headline: str(c.kn.headline, 80), subline: str(c.kn.subline, 110), body: str(c.kn.body, 260), cta: str(c.kn.cta, 50) } : undefined }
+    : templateCopy(input);
+  const s: Session = (req as any).auth.session;
+  const actor = profiles.find((p) => p.id === s.id);
+  const valid_until = /^\d{4}-\d{2}-\d{2}$/.test(req.body?.valid_until || '') ? req.body.valid_until : undefined;
+  const rec: BannerRecord = {
+    id: `bnr_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+    type: input.type, title: input.title, festival: input.festival, date: input.date, venue: input.venue, offer: input.offer, price: input.price,
+    branch_ids: input.branch_ids, theme: input.theme, language: input.language || 'en', copy,
+    status: 'active', visible_to_members: req.body?.visible_to_members !== false, valid_until,
+    copy_source: req.body?.copy_source === 'ai' ? 'ai' : 'template', created_by: s.id, created_by_name: actor?.full_name || s.id, created_at: new Date().toISOString(),
+  };
+  banners.unshift(rec);
+  if (banners.length > 500) banners.length = 500;
+  res.status(201).json(rec);
+});
+
+app.put('/api/banners/:id', (req, res) => {
+  const b = banners.find((x) => x.id === req.params.id);
+  if (!b) return res.status(404).json({ error: 'Banner not found' });
+  if (req.body?.status === 'active' || req.body?.status === 'archived') b.status = req.body.status;
+  if (typeof req.body?.visible_to_members === 'boolean') b.visible_to_members = req.body.visible_to_members;
+  res.json(b);
+});
+
 // Reset Seed Data
 
 app.post('/api/reset-seed', (req, res) => {
@@ -6794,6 +6887,7 @@ persistence = createPersistence({
     if (data.msg91DltTemplates !== undefined) msg91DltTemplates = data.msg91DltTemplates;
     if (data.branchSmsConfigs !== undefined) branchSmsConfigs = data.branchSmsConfigs;
     if (data.pinHashes !== undefined) pinHashes = data.pinHashes;
+    if (data.banners !== undefined) banners = data.banners;
   },
 });
 persistence.load();

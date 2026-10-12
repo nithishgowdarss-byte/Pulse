@@ -1,3 +1,5 @@
+import '@fontsource/noto-sans-kannada/400.css';
+import '@fontsource/noto-sans-kannada/700.css';
 import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';
 import App from './App.tsx';

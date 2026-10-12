@@ -15,7 +15,7 @@ import {
   Sparkles,
   FileDown,
 } from 'lucide-react';
-import { KeyRound, LogOut } from 'lucide-react';
+import { KeyRound, LogOut, ImagePlus } from 'lucide-react';
 import { UserRole, Profile, Branch } from '../types';
 import { useStaffNotifications } from '../hooks/useStaffNotifications';
 
@@ -31,6 +31,7 @@ interface NavbarProps {
   onSelectBranch: (branchId: string) => void;
   onLogout: () => void;
   onOpenPins?: () => void;
+  onOpenBannerStudio?: () => void;
   onOpenBranchManager: () => void;
   onResetSeed: () => void;
   onOpenExpoGuide: () => void;
@@ -51,6 +52,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onSelectBranch,
   onLogout,
   onOpenPins,
+  onOpenBannerStudio,
   onOpenBranchManager,
   onResetSeed,
   onOpenExpoGuide,
@@ -237,6 +239,14 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </div>
               )}
             </div>
+
+            {onOpenBannerStudio && (
+              <button onClick={onOpenBannerStudio} title="Banner Studio: posters for offers, events and festivals" aria-label="Banner Studio"
+                className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-fuchsia-700 to-red-600 text-white text-xs font-black shadow-md">
+                <ImagePlus className="w-3.5 h-3.5" />
+                <span className="hidden xl:inline">Banners</span>
+              </button>
+            )}
 
             {/* FreeLLMAPI Gateway & Router Button */}
             {onOpenFreeLlmApi && (
