@@ -108,6 +108,12 @@ export default function App() {
     return () => window.removeEventListener(AUTH_REQUIRED_EVENT, onAuthRequired);
   }, []);
 
+  // Branch-scoped staff never sit on "All branches": lock the selector to their own branch.
+  useEffect(() => {
+    if (!currentProfile || currentProfile.role === 'owner' || currentProfile.role === 'super_owner' || currentProfile.role === 'member') return;
+    const ids: string[] = (currentProfile as any).assigned_branch_ids?.length ? (currentProfile as any).assigned_branch_ids : currentProfile.branch_id ? [currentProfile.branch_id] : [];
+    if (ids.length && !ids.includes(activeBranchId)) setActiveBranchId(ids[0]);
+  }, [currentProfile, activeBranchId]);
   const signedInId = currentProfile?.id;
   const signedInRole = currentProfile?.role;
   useEffect(() => {

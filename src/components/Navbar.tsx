@@ -66,6 +66,8 @@ export const Navbar: React.FC<NavbarProps> = ({
 }) => {
   const [showNotifMenu, setShowNotifMenu] = useState(false);
   const isOwnerRole = currentProfile.role === 'owner' || currentProfile.role === 'super_owner' || currentProfile.role === 'branch_manager';
+  const isFullOwner = currentProfile.role === 'owner' || currentProfile.role === 'super_owner';
+  const scopedBranchIds: string[] = (currentProfile as any).assigned_branch_ids?.length ? (currentProfile as any).assigned_branch_ids : currentProfile.branch_id ? [currentProfile.branch_id] : [];
 
   const { notifications, unreadCount, markAsRead, markAllAsRead } = useStaffNotifications(
     currentProfile?.id,
@@ -103,10 +105,12 @@ export const Navbar: React.FC<NavbarProps> = ({
                     title="Change Active Gym Branch"
                     className="bg-transparent text-[11px] font-black text-zinc-200 focus:outline-none cursor-pointer pr-1 uppercase tracking-wider"
                   >
-                    <option value="all" className="bg-zinc-900 text-white">
-                      🏢 All 3 Branches (HQ)
-                    </option>
-                    {branches.map((b) => (
+                    {isFullOwner && (
+                      <option value="all" className="bg-zinc-900 text-white">
+                        🏢 All 3 Branches (HQ)
+                      </option>
+                    )}
+                    {branches.filter((b) => isFullOwner || scopedBranchIds.includes(b.id)).map((b) => (
                       <option key={b.id} value={b.id} className="bg-zinc-900 text-white">
                         📍 {b.name.replace('Pulse Fitness - ', '')}
                       </option>
