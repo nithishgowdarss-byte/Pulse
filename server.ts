@@ -59,6 +59,10 @@ const HOST = process.env.HOST || '127.0.0.1';
 import { securityHeaders, createRateLimiter, requestLogger, errorHandler, isProduction, createBasicAuthGate } from './src/server/http';
 import { createPersistence } from './src/server/persistence';
 import { bodyValidator } from './src/server/validation';
+import {
+  hashPin, verifyPin, isValidPinFormat, encodeSession, sessionCookie, clearSessionCookie,
+  loginThrottle, createAuthMiddleware, getSessionSecret, Session, readSession,
+} from './src/server/auth';
 
 app.disable('x-powered-by');
 app.set('trust proxy', process.env.TRUST_PROXY === '1' ? 1 : false);
@@ -66,7 +70,7 @@ app.use(securityHeaders);
 app.use(requestLogger);
 app.use(createBasicAuthGate(process.env.PULSE_BASIC_AUTH));
 if (isProduction() && !process.env.PULSE_BASIC_AUTH) {
-  console.warn('[security] PULSE_BASIC_AUTH is not set: the app has no login. Do not expose it publicly.');
+  console.warn('[security] PULSE_BASIC_AUTH not set (optional extra perimeter login on top of PIN auth).');
 }
 app.use(express.json({ limit: process.env.JSON_LIMIT || '1mb' }));
 app.use('/api', bodyValidator);
@@ -78,6 +82,115 @@ app.use((req, res, next) => {
 });
 app.use('/api/freellmapi', createRateLimiter({ windowMs: 60_000, max: Number(process.env.AI_RATE_LIMIT_PER_MIN) || 20 }));
 app.use('/api', createRateLimiter({ windowMs: 60_000, max: Number(process.env.API_RATE_LIMIT_PER_MIN) || 600 }));
+
+
+// ---------------- Authentication (per-person PIN) ----------------
+// PIN hashes live apart from profiles/members so they are never returned by list endpoints.
+let pinHashes: Record<string, string> = {};
+const DEV_PINS: Record<string, string> = {
+  usr_super_1: '1111', usr_owner_1: '2222', usr_manager_1: '3333',
+  usr_trainer_1: '4444', usr_trainer_2: '4444', usr_trainer_3: '4444', usr_trainer_4: '4444', usr_trainer_5: '4444',
+};
+function seedPins() {
+  if (isProduction() && process.env.PULSE_SEED_DEV_PINS !== '1') {
+    const boot = process.env.SUPER_OWNER_PIN;
+    if (!pinHashes.usr_super_1 && boot && isValidPinFormat(boot)) pinHashes.usr_super_1 = hashPin(boot);
+    return;
+  }
+  for (const [id, pin] of Object.entries(DEV_PINS)) if (!pinHashes[id]) pinHashes[id] = hashPin(pin);
+  for (const m of members) if (!pinHashes[m.id]) pinHashes[m.id] = hashPin('5555');
+}
+const pinVersion = (id: string) => (pinHashes[id] || '').split('$')[2]?.slice(0, 10) || '';
+const cleanPhone10 = (v: unknown) => String(v ?? '').replace(/\D/g, '').slice(-10);
+const isMemberActiveAccount = (m: any) => m && !m.is_archived && !m.archived_at;
+
+function staffBranchIds(p: Profile | undefined): string[] {
+  if (!p) return [];
+  return p.assigned_branch_ids?.length ? p.assigned_branch_ids : p.branch_id ? [p.branch_id] : [];
+}
+function sessionProfile(s: Session): any {
+  if (s.kind === 'staff') return profiles.find((p) => p.id === s.id) || null;
+  const m: any = members.find((x) => x.id === s.id);
+  if (!m) return null;
+  return { id: m.id, full_name: m.full_name, role: 'member', phone: m.phone, email: m.email, branch_id: m.branch_id, branch_name: m.branch_name, created_at: m.created_at };
+}
+
+app.post('/api/auth/login', (req, res) => {
+  const phone = cleanPhone10(req.body?.phone);
+  const pin = req.body?.pin;
+  if (phone.length !== 10 || !isValidPinFormat(pin)) {
+    return res.status(400).json({ error: 'Enter your 10-digit phone number and 4-8 digit PIN', code: 'BAD_INPUT' });
+  }
+  const ipKey = `ip:${req.ip}`;
+  const acctKey = `acct:${phone}`;
+  const locked = loginThrottle.isLocked(acctKey) || loginThrottle.isLocked(ipKey);
+  if (locked) {
+    res.setHeader('Retry-After', String(locked));
+    return res.status(429).json({ error: `Too many wrong PINs. Try again in ${Math.ceil(locked / 60)} min.`, code: 'LOCKED' });
+  }
+  const candidates: { kind: 'staff' | 'member'; id: string; role: string }[] = [
+    ...profiles.filter((p) => cleanPhone10(p.phone) === phone).map((p) => ({ kind: 'staff' as const, id: p.id, role: p.role })),
+    ...members.filter((m: any) => cleanPhone10(m.phone) === phone && isMemberActiveAccount(m)).map((m) => ({ kind: 'member' as const, id: m.id, role: 'member' })),
+  ];
+  // Try every candidate so timing does not reveal which phones exist
+  let hit: (typeof candidates)[number] | null = null;
+  for (const c of candidates) if (verifyPin(pin, pinHashes[c.id]) && !hit) hit = c;
+  if (!candidates.length) verifyPin(pin, hashPin('0000'));
+  if (!hit) {
+    loginThrottle.fail(acctKey);
+    loginThrottle.fail(ipKey);
+    return res.status(401).json({ error: 'Wrong phone number or PIN', code: 'BAD_CREDENTIALS' });
+  }
+  loginThrottle.success(acctKey);
+  const token = encodeSession({ kind: hit.kind, id: hit.id, role: hit.role, pv: pinVersion(hit.id) });
+  res.setHeader('Set-Cookie', sessionCookie(token));
+  auditLogs.unshift({ id: `aud_${Date.now()}`, actor_id: hit.id, action: 'auth.login', entity_type: 'session', entity_id: hit.id, created_at: new Date().toISOString() } as any);
+  res.json({ kind: hit.kind, profile: sessionProfile({ ...hit, exp: 0 }) });
+});
+
+app.post('/api/auth/logout', (_req, res) => {
+  res.setHeader('Set-Cookie', clearSessionCookie());
+  res.json({ success: true });
+});
+
+app.use(
+  createAuthMiddleware({
+    sessionValid: (s) => !!sessionProfile(s) && (s.kind !== 'member' || isMemberActiveAccount(members.find((m) => m.id === s.id))) && s.pv === pinVersion(s.id) && !!pinHashes[s.id],
+    branchIdsFor: (s) => (s.role === 'super_owner' || s.role === 'owner' ? null : s.kind === 'member' ? [] : staffBranchIds(profiles.find((p) => p.id === s.id))),
+    memberBranch: (id) => members.find((m) => m.id === id)?.branch_id,
+  })
+);
+
+// Public: answers 200 with profile null when signed out (avoids noisy 401s on first load)
+app.get('/api/auth/me', (req, res) => {
+  const s = readSession(req);
+  const valid = s && sessionProfile(s) && s.pv === pinVersion(s.id) && !!pinHashes[s.id] && (s.kind !== 'member' || isMemberActiveAccount(members.find((m) => m.id === s.id)));
+  res.setHeader('Cache-Control', 'no-store');
+  res.json(valid ? { kind: s!.kind, profile: sessionProfile(s!) } : { kind: null, profile: null });
+});
+
+// PIN administration: super owner only (enforced again in authorize())
+app.get('/api/auth/pins', (_req, res) => {
+  res.json([
+    ...profiles.map((p) => ({ id: p.id, kind: 'staff', name: p.full_name, role: p.role, phone: p.phone, has_pin: !!pinHashes[p.id] })),
+    ...members.map((m) => ({ id: m.id, kind: 'member', name: m.full_name, role: 'member', phone: m.phone, has_pin: !!pinHashes[m.id] })),
+  ]);
+});
+app.put('/api/auth/pins/:id', (req, res) => {
+  const { id } = req.params;
+  const pin = req.body?.pin;
+  if (!profiles.some((p) => p.id === id) && !members.some((m) => m.id === id)) return res.status(404).json({ error: 'User not found' });
+  if (!isValidPinFormat(pin)) return res.status(400).json({ error: 'PIN must be 4-8 digits' });
+  if (/^(\d)\1+$/.test(pin) && isProduction()) return res.status(400).json({ error: 'PIN is too simple' });
+  pinHashes[id] = hashPin(pin);
+  const actor = (req as any).auth.session.id;
+  auditLogs.unshift({ id: `aud_${Date.now()}`, actor_id: actor, action: 'auth.pin_set', entity_type: 'user', entity_id: id, created_at: new Date().toISOString() } as any);
+  res.json({ success: true, id });
+});
+app.delete('/api/auth/pins/:id', (req, res) => {
+  delete pinHashes[req.params.id];
+  res.json({ success: true, id: req.params.id });
+});
 
 // Liveness / readiness probe (used by Docker HEALTHCHECK)
 app.get(['/healthz', '/api/health'], (_req, res) => {
@@ -6680,9 +6793,12 @@ persistence = createPersistence({
     if (data.branchRotationLogs !== undefined) branchRotationLogs = data.branchRotationLogs;
     if (data.msg91DltTemplates !== undefined) msg91DltTemplates = data.msg91DltTemplates;
     if (data.branchSmsConfigs !== undefined) branchSmsConfigs = data.branchSmsConfigs;
+    if (data.pinHashes !== undefined) pinHashes = data.pinHashes;
   },
 });
 persistence.load();
+seedPins();
+getSessionSecret();
 
 // Start Server with Vite Middleware
 async function startServer() {

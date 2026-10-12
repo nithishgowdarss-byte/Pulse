@@ -1,5 +1,5 @@
 // public/sw.js
-const CACHE = 'pulse-shell-v2';
+const CACHE = 'pulse-shell-v3';
 const SHELL = [
   '/',
   '/index.html',
@@ -27,6 +27,9 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
+
+  // Only handle our own origin; third-party (avatars, fonts) go straight to the network
+  if (url.origin !== self.location.origin) return;
 
   // Always network for API, dev-server, models, Vite internals, and non-GET routes
   if (

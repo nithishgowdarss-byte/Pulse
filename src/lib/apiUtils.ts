@@ -39,7 +39,8 @@ export async function safeFetchJson<T>(
     
     // Fallback to cache if response is not ok
     if (!res.ok) {
-      if (isGet) {
+      // Never serve cached data for auth failures (could belong to another user)
+      if (isGet && res.status !== 401 && res.status !== 403) {
         const cached = await get<T>(cacheKey);
         if (cached !== undefined) return cached;
       }

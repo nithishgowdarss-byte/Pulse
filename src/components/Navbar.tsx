@@ -15,6 +15,7 @@ import {
   Sparkles,
   FileDown,
 } from 'lucide-react';
+import { KeyRound, LogOut } from 'lucide-react';
 import { UserRole, Profile, Branch } from '../types';
 import { useStaffNotifications } from '../hooks/useStaffNotifications';
 
@@ -28,7 +29,8 @@ interface NavbarProps {
   branches: Branch[];
   activeBranchId: string;
   onSelectBranch: (branchId: string) => void;
-  onProfileChange: (profile: Profile) => void;
+  onLogout: () => void;
+  onOpenPins?: () => void;
   onOpenBranchManager: () => void;
   onResetSeed: () => void;
   onOpenExpoGuide: () => void;
@@ -47,7 +49,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   branches,
   activeBranchId,
   onSelectBranch,
-  onProfileChange,
+  onLogout,
+  onOpenPins,
   onOpenBranchManager,
   onResetSeed,
   onOpenExpoGuide,
@@ -68,7 +71,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   return (
     <header className="bg-zinc-950 border-b border-zinc-800 text-white sticky top-0 z-40 shadow-xl">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16 sm:h-20 gap-3">
+        <div className="flex flex-wrap items-center justify-between min-h-16 sm:min-h-20 py-2 gap-x-3 gap-y-2">
           
           {/* Left: Logo & Branch Switcher Dropdown */}
           <div className="flex items-center space-x-3">
@@ -121,7 +124,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
 
           {/* Center: Portal Navigation Mode Selector */}
-          <div className="hidden lg:flex items-center bg-zinc-900/90 p-1 rounded-2xl border border-zinc-800 shadow-inner space-x-1">
+          <div className="hidden xl:flex items-center bg-zinc-900/90 p-1 rounded-2xl border border-zinc-800 shadow-inner space-x-1">
             {/* Owner Portal (Visible to Owner Roles Only) */}
             {isOwnerRole && (
               <button
@@ -150,19 +153,6 @@ export const Navbar: React.FC<NavbarProps> = ({
               <span>TRAINER PORTAL</span>
             </button>
 
-            {/* Member App */}
-            <button
-              onClick={() => onViewModeChange('member_app')}
-              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-bold tracking-wide transition-all ${
-                viewMode === 'member_app'
-                  ? 'bg-indigo-600 text-white font-extrabold shadow-md shadow-indigo-600/30'
-                  : 'text-indigo-400 hover:text-indigo-300 hover:bg-indigo-500/10'
-              }`}
-            >
-              <User className="w-3.5 h-3.5" />
-              <span>MEMBER APP</span>
-            </button>
-
             {/* Client Handover */}
             <button
               onClick={() => onViewModeChange('client')}
@@ -178,7 +168,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
 
           {/* Right: User Profile & Tools */}
-          <div className="flex items-center space-x-2 sm:space-x-2.5 min-w-0 flex-shrink">
+          <div className="flex flex-wrap items-center justify-end gap-2 ml-auto">
 
             {/* Staff In-App Notification Bell */}
             <div className="relative">
@@ -290,7 +280,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 alt={currentProfile.full_name}
                 className="w-7 h-7 sm:w-8 sm:h-8 rounded-full ring-2 ring-red-500/40 object-cover mr-2 flex-shrink-0"
               />
-              <div className="text-left mr-1">
+              <div className="text-left mr-1 hidden sm:block">
                 <div className="text-xs font-extrabold text-white truncate max-w-[90px] sm:max-w-[120px]">
                   {currentProfile.full_name}
                 </div>
@@ -300,39 +290,31 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </div>
               </div>
 
-              {/* Profile Select */}
-              <select
-                value={currentProfile.id}
-                onChange={(e) => {
-                  const sel = profiles.find(p => p.id === e.target.value);
-                  if (sel) onProfileChange(sel);
-                }}
-                className="bg-transparent text-xs text-zinc-400 focus:outline-none cursor-pointer border-l border-zinc-800 pl-1.5 py-0.5 font-semibold"
-              >
-                {profiles.map(p => {
-                  const bName = p.branch_name ? p.branch_name.replace('Pulse Fitness - ', '') : '';
-                  return (
-                    <option key={p.id} value={p.id} className="bg-zinc-900 text-white">
-                      {p.full_name} ({p.role.replace('_', ' ')}{bName ? ` • ${bName}` : ''})
-                    </option>
-                  );
-                })}
-              </select>
+              {onOpenPins && (
+                <button onClick={onOpenPins} title="Manage login PINs" aria-label="Manage login PINs"
+                  className="ml-1 p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800">
+                  <KeyRound className="w-4 h-4" />
+                </button>
+              )}
+              <button onClick={onLogout} title="Sign out" aria-label="Sign out"
+                className="ml-1 p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800">
+                <LogOut className="w-4 h-4" />
+              </button>
             </div>
 
-            {/* Reset Seed Data */}
-            <button
+            {/* Reset Seed Data (super owner, dev only; server blocks it in production) */}
+            {currentProfile.role === 'super_owner' && (<button
               onClick={onResetSeed}
               title="Reset Sample Data"
               className="p-2 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white hover:border-zinc-700 transition-all"
             >
               <RefreshCw className="w-4 h-4" />
-            </button>
+            </button>)}
           </div>
         </div>
 
         {/* Mobile View Navigation Tabs */}
-        <div className="lg:hidden flex items-center justify-between py-2 border-t border-zinc-900 overflow-x-auto gap-2">
+        <div className="xl:hidden flex items-center justify-between py-2 border-t border-zinc-900 overflow-x-auto gap-2">
           {isOwnerRole && (
             <button
               onClick={() => onViewModeChange('owner')}
@@ -350,14 +332,6 @@ export const Navbar: React.FC<NavbarProps> = ({
             }`}
           >
             Trainer Portal
-          </button>
-          <button
-            onClick={() => onViewModeChange('member_app')}
-            className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold text-center whitespace-nowrap transition-all ${
-              viewMode === 'member_app' ? 'bg-indigo-600 text-white' : 'bg-indigo-950 text-indigo-300'
-            }`}
-          >
-            Member App
           </button>
           <button
             onClick={() => onViewModeChange('client')}
