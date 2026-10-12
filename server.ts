@@ -2372,6 +2372,11 @@ function processMemberActivation(targetId: string, payload: any, res: express.Re
   const dueVal = balDue !== undefined ? parseFloat(String(balDue)) : 0;
   const commRate = commRateInput !== undefined ? parseFloat(String(commRateInput)) : pkgConfig.defaultCommissionRate;
 
+  if (!Number.isInteger(months) || months < 1 || months > 36) return res.status(400).json({ error: 'Subscription must be 1–36 months.' });
+  if (!Number.isFinite(paidVal) || paidVal < 0 || paidVal > 1000000) return res.status(400).json({ error: 'Amount paid must be between ₹0 and ₹10,00,000.' });
+  if (!Number.isFinite(dueVal) || dueVal < 0 || dueVal > 1000000) return res.status(400).json({ error: 'Balance due must be between ₹0 and ₹10,00,000.' });
+  if (!Number.isFinite(commRate) || commRate < 0 || commRate > 50) return res.status(400).json({ error: 'Commission rate must be 0–50%.' });
+
   const calculatedCommission = calculateCommissionAmount(paidVal, commRate);
 
   member.status = 'active';
@@ -2415,6 +2420,16 @@ function processMemberActivation(targetId: string, payload: any, res: express.Re
 }
 
 // Activate Member (Universal Endpoint)
+// Branch staff can't set their own commission rate or credit money/commission to someone else.
+app.use(['/api/members/activate', '/api/members/:id/activate', '/api/members/:id/payment', '/api/members/:id/renew'], (req, _res, next) => {
+  const s = (req as any).auth?.session;
+  if (req.method === 'POST' && s && !OWNER_SET.has(s.role) && req.body && typeof req.body === 'object') {
+    delete req.body.commission_rate; delete req.body.p_commission_rate;
+    for (const k of ['activated_by', 'p_actor_id', 'received_by', 'renewed_by', 'actor_id']) if (k in req.body || k === 'activated_by') req.body[k] = s.id;
+  }
+  next();
+});
+
 app.post('/api/members/activate', (req, res) => {
   const targetId = req.body?.p_member_id || req.body?.member_id || req.body?.id;
   if (!targetId) {
@@ -2513,6 +2528,10 @@ app.post('/api/members/:id/renew', (req, res) => {
   const newPaidVal = amount_paid !== undefined ? parseFloat(amount_paid) : (pkgConfig.pricePerMonth * months);
   const newDueVal = balance_due !== undefined ? parseFloat(balance_due) : 0;
   const commRate = commission_rate !== undefined ? parseFloat(commission_rate) : pkgConfig.defaultCommissionRate;
+  if (!Number.isInteger(months) || months < 1 || months > 36) return res.status(400).json({ error: 'Subscription must be 1–36 months.' });
+  if (!Number.isFinite(newPaidVal) || newPaidVal < 0 || newPaidVal > 1000000) return res.status(400).json({ error: 'Amount paid must be between ₹0 and ₹10,00,000.' });
+  if (!Number.isFinite(newDueVal) || newDueVal < 0 || newDueVal > 1000000) return res.status(400).json({ error: 'Balance due must be between ₹0 and ₹10,00,000.' });
+  if (!Number.isFinite(commRate) || commRate < 0 || commRate > 50) return res.status(400).json({ error: 'Commission rate must be 0–50%.' });
 
   member.status = 'active';
   member.package_type = pkg;

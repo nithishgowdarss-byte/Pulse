@@ -157,3 +157,19 @@ describe('member create input validation', () => {
     expect((r.body.member || r.body).onboarded_by).toBe(trainer.id);
   });
 });
+
+describe('money integrity', () => {
+  it('trainer cannot set own commission rate or credit someone else; bad amounts rejected', async () => {
+    const c = await trainerA.post('/api/members').send({ full_name: 'Comm Test', phone: '9123456783' });
+    const id = (c.body.member || c.body).id;
+    expect((await trainerA.post(`/api/members/${id}/activate`).send({ subscription_months: 0, amount_paid: 1000 })).status).toBe(400);
+    expect((await trainerA.post(`/api/members/${id}/activate`).send({ subscription_months: 1, amount_paid: 'NaN' })).status).toBe(400);
+    expect((await trainerA.post(`/api/members/${id}/activate`).send({ subscription_months: 1, amount_paid: -5 })).status).toBe(400);
+    const r = await trainerA.post(`/api/members/${id}/activate`).send({ subscription_months: 1, amount_paid: 1000, commission_rate: 50, activated_by: 'usr_trainer_5' });
+    expect(r.status, JSON.stringify(r.body).slice(0, 200)).toBeLessThan(300);
+    const m = (await superA.get('/api/members')).body.find((x: any) => x.id === id);
+    expect(m.commission_rate).not.toBe(50);
+    expect((await superA.post(`/api/members/${id}/renew`).send({ subscription_months: 999 })).status).toBe(400);
+    expect((await superA.post(`/api/members/${id}/renew`).send({ subscription_months: 1, commission_rate: 400 })).status).toBe(400);
+  });
+});
