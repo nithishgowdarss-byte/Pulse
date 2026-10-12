@@ -15,7 +15,7 @@ import {
   Sparkles,
   FileDown,
 } from 'lucide-react';
-import { KeyRound, LogOut, ImagePlus } from 'lucide-react';
+import { KeyRound, LogOut, ImagePlus, ScanLine } from 'lucide-react';
 import { UserRole, Profile, Branch } from '../types';
 import { useStaffNotifications } from '../hooks/useStaffNotifications';
 
@@ -32,6 +32,7 @@ interface NavbarProps {
   onLogout: () => void;
   onOpenPins?: () => void;
   onOpenBannerStudio?: () => void;
+  onOpenDesk?: () => void;
   onOpenBranchManager: () => void;
   onResetSeed: () => void;
   onOpenExpoGuide: () => void;
@@ -53,6 +54,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onLogout,
   onOpenPins,
   onOpenBannerStudio,
+  onOpenDesk,
   onOpenBranchManager,
   onResetSeed,
   onOpenExpoGuide,
@@ -239,6 +241,14 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </div>
               )}
             </div>
+
+            {onOpenDesk && (
+              <button onClick={onOpenDesk} title="Front desk: QR check-in, dues reminders, PT sessions" aria-label="Front desk"
+                className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 text-white text-xs font-black shadow-md">
+                <ScanLine className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Desk</span>
+              </button>
+            )}
 
             {onOpenBannerStudio && (
               <button onClick={onOpenBannerStudio} title="Banner Studio: posters for offers, events and festivals" aria-label="Banner Studio"

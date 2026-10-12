@@ -87,3 +87,16 @@ describe('AI message validation', () => {
     expect(validateBody({ messages: [{ role: 'user', content: 'hi' }] })).toBeNull();
   });
 });
+
+import { csvCell } from '../src/lib/csv';
+describe('csvCell', () => {
+  it('neutralises formulas and quotes', () => {
+    expect(csvCell('=HYPERLINK("x")')).toBe(`"'=HYPERLINK(""x"")"`);
+    expect(csvCell('+91 98')).toBe(`"'+91 98"`);
+    expect(csvCell('@SUM(A1)')).toBe(`"'@SUM(A1)"`);
+    expect(csvCell(-250)).toBe('-250');
+    expect(csvCell('Rhea Sen')).toBe('Rhea Sen');
+    expect(csvCell('a,b')).toBe('"a,b"');
+    expect(csvCell(null)).toBe('');
+  });
+});

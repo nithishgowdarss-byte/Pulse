@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { MemberOffers } from './MemberOffers';
+import { MemberQrPass, MemberPtSummary } from './MemberQrPass';
 import { Profile, Member, AttendanceRecord, PaymentRecord, MemberMeasurement, GymAnnouncement, MemberFreezeRequest } from '../types';
 import { Dumbbell, QrCode, Calendar, Clock, CreditCard, Scale, PauseCircle, Bell, User, Phone, CheckCircle2, AlertCircle, RefreshCw, Send, Sparkles } from 'lucide-react';
 import { calculateDaysRemaining } from '../lib/membership';
@@ -193,12 +194,8 @@ export const MemberAppView: React.FC<MemberAppViewProps> = ({ currentProfile, on
           </div>
 
           {/* QR Turnstile Pass */}
-          <div className="bg-zinc-950 p-4 rounded-2xl border border-zinc-800/80 text-center space-y-2">
-            <div className="p-3 bg-white rounded-xl inline-block shadow-inner">
-              <QrCode className="w-24 h-24 text-zinc-950 mx-auto" />
-            </div>
-            <span className="text-[10px] font-mono text-zinc-500 block">Scan at Gym Gate Turnstile / Desk</span>
-          </div>
+          <MemberQrPass memberId={member.id} />
+          <MemberPtSummary memberId={member.id} />
         </div>
 
         {/* Navigation Tabs */}

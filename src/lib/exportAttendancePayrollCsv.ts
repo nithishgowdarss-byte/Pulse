@@ -1,3 +1,4 @@
+import { csvCell } from './csv';
 import dayjs from 'dayjs';
 
 export function buildAttendancePayrollCsv(rows: any[]): string {
@@ -22,8 +23,8 @@ export function buildAttendancePayrollCsv(rows: any[]): string {
       r.branch?.name ?? r.branch_name ?? 'Main HQ',
       r.method ?? 'qr',
       r.staff?.full_name ?? r.checked_in_by_name ?? '',
-      String(r.notes ?? '').replace(/"/g, '""'),
-    ].map((v) => `"${String(v)}"`);
+      String(r.notes ?? ''),
+    ].map(csvCell);
     lines.push(vals.join(','));
   }
   return lines.join('\n');

@@ -62,6 +62,7 @@ import { createPersistence } from './src/server/persistence';
 import { createSqliteStore } from './src/server/sqliteStore';
 import { bodyValidator } from './src/server/validation';
 import { createVault, getSecretsKey, SealedSecret } from './src/server/secrets';
+import { issuePass, verifyPass } from './src/server/memberPass';
 import {
   hashPin, verifyPin, isValidPinFormat, encodeSession, sessionCookie, clearSessionCookie,
   loginThrottle, createAuthMiddleware, getSessionSecret, Session, readSession,
@@ -174,11 +175,12 @@ app.use(
   createAuthMiddleware({
     sessionValid: (s) => !!sessionProfile(s) && (s.kind !== 'member' || isMemberActiveAccount(members.find((m) => m.id === s.id))) && s.pv === pinVersion(s.id) && !!pinHashes[s.id],
     branchIdsFor: (s) => (s.role === 'super_owner' || s.role === 'owner' ? null : s.kind === 'member' ? [] : staffBranchIds(profiles.find((p) => p.id === s.id))),
-    memberBranch: (id) => members.find((m) => m.id === id)?.branch_id,
+    memberBranch: (id) => (members.find((m) => m.id === id) || (/^\d{10}$/.test(id) ? members.find((m) => m.phone === id) : undefined))?.branch_id,
     entityBranch: (p) => {
       const mb = (id?: string) => (id ? members.find((m) => m.id === id)?.branch_id : undefined);
       let m: RegExpMatchArray | null;
       if ((m = p.match(/^\/api\/freeze-requests\/([^/]+)$/))) { const r = freezeRequests.find((x) => x.id === m![1]); return r ? r.branch_id || mb(r.member_id) || '' : undefined; }
+      if ((m = p.match(/^\/api\/pt-packages\/([^/]+)(\/.*)?$/))) { const r = ptPackages.find((x) => x.id === m![1]); return r ? r.branch_id : ''; }
       if ((m = p.match(/^\/api\/leads\/([^/]+)(\/convert)?$/))) { const r = leads.find((x) => x.id === m![1]); return r ? r.branch_id || '' : undefined; }
       if ((m = p.match(/^\/api\/retention\/alerts\/([^/]+)\/resolve$/))) { const r = retentionAlerts.find((x) => x.id === m![1]); return r ? r.branch_id || mb(r.member_id) || '' : undefined; }
       if ((m = p.match(/^\/api\/winback\/enrollments\/([^/]+)/))) { const r = winbackEnrollments.find((x) => x.id === m![1]); return r ? r.branch_id || mb(r.member_id) || '' : undefined; }
@@ -430,6 +432,13 @@ let winbackCampaigns: WinbackCampaign[] = [];
 let winbackEnrollments: WinbackEnrollment[] = [];
 let winbackAttempts: WinbackAttempt[] = [];
 let balanceReminderLogs: BalanceReminderLog[] = [];
+interface PtSession { id: string; at: string; trainer_id: string; trainer_name: string; notes?: string }
+interface PtPackage {
+  id: string; member_id: string; member_name: string; branch_id: string;
+  trainer_id: string; trainer_name: string; sessions_total: number; price: number;
+  purchased_at: string; expires_on?: string; notes?: string; sessions: PtSession[]; created_by: string;
+}
+let ptPackages: PtPackage[] = [];
 let balanceReminderSettings: Record<string, BalanceReminderSettings> = {
   'br_nag_1': {
     branch_id: 'br_nag_1',
@@ -1939,8 +1948,19 @@ app.post('/api/members', (req, res) => {
     return res.status(400).json({ error: 'Full name and phone number are required.' });
   }
 
-  const cleanPhone = phone.replace(/\D/g, '').slice(-10);
-  const trainer = profiles.find(p => p.id === onboarded_by) || profiles.find(p => p.role === 'trainer');
+  if (typeof full_name !== 'string' || !full_name.trim() || full_name.length > 120) {
+    return res.status(400).json({ error: 'Name must be 1–120 characters.' });
+  }
+  const cleanPhone = String(phone).replace(/\D/g, '').slice(-10);
+  if (!/^[6-9]\d{9}$/.test(cleanPhone)) {
+    return res.status(400).json({ error: 'Enter a valid 10-digit Indian mobile number (starting with 6–9).', code: 'INVALID_PHONE' });
+  }
+  if (req.body.branch_id && !['auto', 'all', 'br_hq_1'].includes(req.body.branch_id) && !branches.some(b => b.id === req.body.branch_id)) {
+    return res.status(400).json({ error: 'Unknown branch.' });
+  }
+  const sessionUser = (req as any).auth?.session;
+  const trainer = (sessionUser?.role === 'trainer' ? profiles.find(p => p.id === sessionUser.id) : undefined)
+    || profiles.find(p => p.id === onboarded_by) || profiles.find(p => p.role === 'trainer');
 
   // Auto-detect branch if branch_id is missing or set to 'auto'
   let targetBranchId = req.body.branch_id;
@@ -2652,48 +2672,156 @@ app.get('/api/attendance', (req, res) => {
   res.json(enriched);
 });
 
+app.get('/api/members/:id/pass', (req, res) => {
+  const member = members.find(m => m.id === req.params.id);
+  if (!member || member.is_archived) return res.status(404).json({ error: 'Member record not found' });
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({ ...issuePass(getSessionSecret(), member.id), member_id: member.id, full_name: member.full_name });
+});
+
+const CHECKIN_DEDUPE_MS = 3 * 60 * 60 * 1000;
 app.post('/api/attendance/check-in', (req, res) => {
   syncMemberExpiries();
-  const { member_id, checked_in_by, method, notes } = req.body;
+  const { member_id, qr_token, method, notes, override } = req.body || {};
+  const ctx = (req as any).auth as { session: Session; branchIds: string[] | null } | undefined;
 
-  if (!member_id) {
-    return res.status(400).json({ error: 'Member ID required for check-in' });
+  let member: Member | undefined;
+  if (qr_token) {
+    const v = verifyPass(getSessionSecret(), qr_token);
+    if (!v.ok) {
+      const msg = v.reason === 'EXPIRED' ? 'This pass has expired. Ask the member to reopen the Pulse app to refresh their QR.' :
+        v.reason === 'BAD_SIGNATURE' ? 'This QR code is not a valid Pulse pass.' : 'Not a Pulse member QR code.';
+      return res.status(400).json({ error: msg, code: `PASS_${v.reason}` });
+    }
+    member = members.find(m => m.id === v.memberId!);
+  } else if (typeof member_id === 'string' && member_id.trim()) {
+    const key = member_id.trim();
+    member = members.find(m => m.id === key);
+    if (!member) {
+      const digits = key.replace(/\D/g, '').slice(-10);
+      const hits = digits.length === 10 ? members.filter(m => m.phone === digits && !m.is_archived) : [];
+      if (hits.length > 1) return res.status(409).json({ error: `${hits.length} members share this phone (${hits.map(h => h.full_name).join(', ')}). Scan their QR or pick from the list.`, code: 'AMBIGUOUS_PHONE', candidates: hits.map(h => ({ id: h.id, full_name: h.full_name })) });
+      member = hits[0];
+    }
+  } else {
+    return res.status(400).json({ error: 'Scan a member QR or enter a member phone number', code: 'MISSING_MEMBER' });
   }
-
-  const member = members.find(m => m.id === member_id || m.phone === member_id);
-  if (!member) {
-    return res.status(404).json({ error: 'Member record not found' });
+  if (!member) return res.status(404).json({ error: 'No member found for that QR/phone', code: 'NOT_FOUND' });
+  if (ctx && ctx.branchIds && !ctx.branchIds.includes(member.branch_id)) {
+    return res.status(403).json({ error: `${member.full_name} belongs to another branch (${branches.find(b => b.id === member!.branch_id)?.name || member.branch_id})`, code: 'OTHER_BRANCH' });
   }
-
   if (member.is_archived) {
-    return res.status(400).json({ error: 'Cannot check in an archived member. Please restore member first.' });
+    return res.status(409).json({ error: 'Cannot check in an archived member. Please restore member first.', code: 'ARCHIVED' });
+  }
+  const recent = attendanceLogs.find(a => a.member_id === member!.id && Date.now() - new Date(a.checked_in_at).getTime() < CHECKIN_DEDUPE_MS);
+  if (recent) {
+    return res.status(409).json({ error: `${member.full_name} already checked in at ${new Date(recent.checked_in_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })}`, code: 'ALREADY_CHECKED_IN', record: recent, member });
+  }
+  const today = getTodayStr();
+  const expired = member.status === 'expired' || (!!member.end_date && member.end_date < today);
+  if (member.status === 'cancelled' || member.status === 'pending') {
+    if (!override) return res.status(409).json({ error: `${member.full_name}'s membership is ${member.status}. Activate it before check-in.`, code: 'MEMBERSHIP_INACTIVE', member });
+  }
+  if (expired && !override) {
+    return res.status(409).json({ error: `${member.full_name}'s membership expired${member.end_date ? ` on ${member.end_date}` : ''}. Renew, or allow a one-time entry.`, code: 'MEMBERSHIP_EXPIRED', member });
   }
 
-  const checker = profiles.find(p => p.id === checked_in_by) || profiles[0];
-
+  const checker = profiles.find(p => p.id === ctx?.session.id) || profiles[0];
   const record: AttendanceRecord = {
-    id: `att_${Date.now()}`,
+    id: `att_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
     member_id: member.id,
     member_name: member.full_name,
     member_package: member.package_type,
+    branch_id: member.branch_id,
     checked_in_at: new Date().toISOString(),
     checked_in_by: checker.id,
     checked_in_by_name: checker.full_name,
-    method: method || 'qr',
-    notes: notes || undefined
-  };
+    method: qr_token ? 'qr' : (method === 'manual' || method === 'qr' ? method : 'manual'),
+    notes: (override ? `[override${expired ? ': expired' : ''}] ` : '') + (typeof notes === 'string' ? notes.slice(0, 300) : '') || undefined
+  } as AttendanceRecord;
 
   attendanceLogs.unshift(record);
 
   // Auto-resolve stale attendance alerts upon QR/manual check-in
-  const staleAlerts = retentionAlerts.filter(a => a.member_id === member.id && !a.is_resolved && (a.alert_type === 'at_risk' || a.message?.toLowerCase().includes('absent') || a.message?.toLowerCase().includes('check-in')));
+  const staleAlerts = retentionAlerts.filter(a => a.member_id === member!.id && !a.is_resolved && (a.alert_type === 'at_risk' || a.message?.toLowerCase().includes('absent') || a.message?.toLowerCase().includes('check-in')));
   staleAlerts.forEach(a => {
     a.is_resolved = true;
     a.resolved_at = new Date().toISOString();
     a.resolved_by = checker.full_name;
   });
 
-  res.status(201).json({ success: true, record, member, auto_resolved_alerts: staleAlerts.length });
+  const warnings: string[] = [];
+  if (expired) warnings.push(`Membership expired${member.end_date ? ` on ${member.end_date}` : ''}`);
+  if ((Number(member.balance_due) || 0) > 0) warnings.push(`Balance due ₹${Number(member.balance_due).toLocaleString('en-IN')}`);
+  if (member.end_date && !expired) {
+    const days = Math.round((new Date(member.end_date).getTime() - new Date(today).getTime()) / 86400000);
+    if (days <= 7) warnings.push(`Membership ends in ${days} day${days === 1 ? '' : 's'}`);
+  }
+  res.status(201).json({ success: true, record, member, warnings, auto_resolved_alerts: staleAlerts.length });
+});
+
+// ---------- Personal training (PT) packages ----------
+const ptView = (p: PtPackage) => {
+  const used = p.sessions.length;
+  const today = getTodayStr();
+  return { ...p, sessions_used: used, sessions_left: Math.max(0, p.sessions_total - used), expired: !!p.expires_on && p.expires_on < today };
+};
+app.get('/api/pt-packages', (req, res) => {
+  const { member_id, trainer_id, branch_id, active } = req.query as Record<string, string | undefined>;
+  let list = ptPackages.map(ptView);
+  if (member_id) list = list.filter(p => p.member_id === member_id);
+  if (trainer_id) list = list.filter(p => p.trainer_id === trainer_id);
+  if (branch_id && branch_id !== 'all') list = list.filter(p => p.branch_id === branch_id);
+  if (active === '1') list = list.filter(p => p.sessions_left > 0 && !p.expired);
+  list.sort((a, b) => b.purchased_at.localeCompare(a.purchased_at));
+  res.json({ packages: list, total: list.length });
+});
+app.post('/api/pt-packages', (req, res) => {
+  const { member_id, trainer_id, sessions_total, price, expires_on, notes } = req.body || {};
+  const member = members.find(m => m.id === member_id && !m.is_archived);
+  if (!member) return res.status(404).json({ error: 'Pick an existing (non-archived) member' });
+  const trainer = profiles.find(p => p.id === trainer_id && (p.role === 'trainer' || p.role === 'branch_manager' || p.role === 'owner' || p.role === 'super_owner'));
+  if (!trainer) return res.status(400).json({ error: 'Pick a trainer for this PT package' });
+  if (!OWNER_SET.has(trainer.role) && !staffBranchIds(trainer).includes(member.branch_id)) return res.status(400).json({ error: `${trainer.full_name} does not work at this member's branch` });
+  const total = Number(sessions_total);
+  if (!Number.isInteger(total) || total < 1 || total > 200) return res.status(400).json({ error: 'Sessions must be a whole number between 1 and 200' });
+  const amt = price === undefined || price === '' ? 0 : Number(price);
+  if (!Number.isFinite(amt) || amt < 0 || amt > 1000000) return res.status(400).json({ error: 'Price must be between ₹0 and ₹10,00,000' });
+  if (expires_on !== undefined && expires_on !== '' && (typeof expires_on !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(expires_on) || isNaN(Date.parse(expires_on)))) return res.status(400).json({ error: 'Expiry must be a valid date (YYYY-MM-DD)' });
+  if (expires_on && expires_on < getTodayStr()) return res.status(400).json({ error: 'Expiry date is in the past' });
+  const actor = (req as any).auth?.session?.id || 'system';
+  const pkg: PtPackage = {
+    id: `pt_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+    member_id: member.id, member_name: member.full_name, branch_id: member.branch_id,
+    trainer_id: trainer.id, trainer_name: trainer.full_name, sessions_total: total, price: Math.round(amt),
+    purchased_at: new Date().toISOString(), expires_on: expires_on || undefined,
+    notes: typeof notes === 'string' && notes.trim() ? notes.trim().slice(0, 300) : undefined, sessions: [], created_by: actor,
+  };
+  ptPackages.unshift(pkg);
+  auditLogs.unshift({ id: `aud_${Date.now()}`, actor_id: actor, action: 'pt.package.create', entity_type: 'pt_package', entity_id: pkg.id, created_at: new Date().toISOString() } as any);
+  res.status(201).json({ package: ptView(pkg) });
+});
+app.post('/api/pt-packages/:id/sessions', (req, res) => {
+  const pkg = ptPackages.find(p => p.id === req.params.id);
+  if (!pkg) return res.status(404).json({ error: 'PT package not found' });
+  const v = ptView(pkg);
+  if (v.expired) return res.status(409).json({ error: `This PT package expired on ${pkg.expires_on}`, code: 'PT_EXPIRED' });
+  if (v.sessions_left <= 0) return res.status(409).json({ error: 'No PT sessions left in this package', code: 'PT_EXHAUSTED' });
+  const sid = (req as any).auth?.session?.id;
+  const by = profiles.find(p => p.id === sid) || profiles.find(p => p.id === pkg.trainer_id)!;
+  const last = pkg.sessions[pkg.sessions.length - 1];
+  if (last && Date.now() - new Date(last.at).getTime() < 30 * 60 * 1000) return res.status(409).json({ error: 'A session was already logged in the last 30 minutes', code: 'PT_DUPLICATE' });
+  const notes = typeof req.body?.notes === 'string' ? req.body.notes.trim().slice(0, 300) : '';
+  pkg.sessions.push({ id: `pts_${Date.now()}`, at: new Date().toISOString(), trainer_id: by.id, trainer_name: by.full_name, notes: notes || undefined });
+  res.status(201).json({ package: ptView(pkg) });
+});
+app.delete('/api/pt-packages/:id/sessions/:sid', (req, res) => {
+  const pkg = ptPackages.find(p => p.id === req.params.id);
+  if (!pkg) return res.status(404).json({ error: 'PT package not found' });
+  const before = pkg.sessions.length;
+  pkg.sessions = pkg.sessions.filter(x => x.id !== req.params.sid);
+  if (pkg.sessions.length === before) return res.status(404).json({ error: 'Session not found' });
+  res.json({ package: ptView(pkg) });
 });
 
 // Staff Attendance REST Endpoints
@@ -5150,6 +5278,8 @@ app.get('/api/balance-reminders/targets', (req, res) => {
   const cooldownMs = cooldownDays * 86400000;
 
   const targets: BalanceReminderTarget[] = [];
+  const invalidPhone: any[] = [];
+  let inCooldown = 0;
   for (const m of members) {
     if (m.is_archived) continue;
     if (branch_id && branch_id !== 'all' && m.branch_id !== branch_id) continue;
@@ -5157,7 +5287,7 @@ app.get('/api/balance-reminders/targets', (req, res) => {
     if (bal < minBal) continue;
 
     const p10 = phone10(m.phone);
-    if (!p10) continue;
+    if (!p10) { invalidPhone.push({ member_id: m.id, full_name: m.full_name, phone: m.phone, balance_due: bal, branch_id: m.branch_id }); continue; }
 
     const sentLogs = balanceReminderLogs.filter(l => l.member_id === m.id && l.status === 'sent');
     let lastSentAt: string | null = null;
@@ -5167,6 +5297,7 @@ app.get('/api/balance-reminders/targets', (req, res) => {
       );
       lastSentAt = latest.created_at;
       if (now - new Date(lastSentAt).getTime() < cooldownMs) {
+        inCooldown++;
         continue;
       }
     }
@@ -5195,7 +5326,7 @@ app.get('/api/balance-reminders/targets', (req, res) => {
   }
 
   targets.sort((a, b) => b.balance_due - a.balance_due);
-  res.json({ targets, count: targets.length });
+  res.json({ targets, count: targets.length, invalid_phone: invalidPhone, in_cooldown: inCooldown, cooldown_days: cooldownDays });
 });
 
 // POST /api/balance-reminders/log
@@ -5217,9 +5348,10 @@ app.post('/api/balance-reminders/log', (req, res) => {
     outcome: outcome || (promised_date ? 'promised' : undefined),
     promised_date: promised_date || undefined,
     error_message: error_message || undefined,
-    actor_id: actor_id || undefined,
+    actor_id: (req as any).auth?.session?.id || actor_id || undefined,
     created_at: new Date().toISOString()
   };
+  if (!mem) return res.status(404).json({ error: 'Member not found' });
 
   balanceReminderLogs.unshift(logRecord);
 
@@ -6892,6 +7024,7 @@ persistence = makeStore({
     pinHashes,
     banners,
     secretVault,
+    ptPackages,
   }),
   restore: (data: any) => {
     if (data.branches !== undefined) branches = data.branches;
@@ -6927,6 +7060,7 @@ persistence = makeStore({
     if (data.pinHashes !== undefined) pinHashes = data.pinHashes;
     if (data.banners !== undefined) banners = data.banners;
     if (data.secretVault !== undefined) secretVault = data.secretVault;
+    if (Array.isArray(data.ptPackages)) ptPackages = data.ptPackages;
   },
 });
 persistence.load();
@@ -6985,6 +7119,8 @@ async function startServer() {
 }
 
 export { app };
+/** Test-only access to the in-memory working set (undefined outside vitest). */
+export const __testState = process.env.VITEST ? { get members() { return members; } } : undefined;
 
 if (process.env.VITEST) {
   app.use('/api', (_req, res) => res.status(404).json({ error: 'Not found' }));

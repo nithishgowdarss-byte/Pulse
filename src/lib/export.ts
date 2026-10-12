@@ -1,3 +1,4 @@
+import { csvCell } from './csv';
 import { Member, ContactExportResult, ExportLogRecord, Profile } from '../types';
 import { normalizeIndianPhone, formatPhoneDisplay } from './phoneUtils';
 
@@ -116,24 +117,10 @@ export function generateMembersCSV(members: Member[]): string {
   ];
   
   const rows = members.map(m => [
-    `"${m.full_name.replace(/"/g, '""')}"`,
-    `"${formatPhoneDisplay(m.phone)}"`,
-    `"${m.status.toUpperCase()}"`,
-    `"${m.package_type || ''}"`,
-    m.subscription_months || '',
-    m.amount_paid || 0,
-    m.balance_due || 0,
-    `"${m.payment_reference || ''}"`,
-    m.start_date || '',
-    m.end_date || '',
-    `"${m.trainer_name || ''}"`,
-    m.age || '',
-    m.gender || '',
-    `"${m.email || ''}"`,
-    `"${m.emergency_contact || ''}"`,
-    m.is_archived ? 'YES' : 'NO',
-    m.created_at
-  ]);
+    m.full_name, formatPhoneDisplay(m.phone), (m.status || '').toUpperCase(), m.package_type || '', m.subscription_months || '',
+    m.amount_paid || 0, m.balance_due || 0, m.payment_reference || '', m.start_date || '', m.end_date || '', m.trainer_name || '',
+    m.age || '', m.gender || '', m.email || '', m.emergency_contact || '', m.is_archived ? 'YES' : 'NO', m.created_at,
+  ].map(csvCell));
 
   return [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
 }

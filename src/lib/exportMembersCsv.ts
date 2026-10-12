@@ -1,3 +1,4 @@
+import { csvCell } from './csv';
 // src/lib/exportMembersCsv.ts
 export type MemberCsvRow = {
   full_name: string;
@@ -11,11 +12,7 @@ export type MemberCsvRow = {
   branch_name?: string | null;
 };
 
-function esc(v: unknown): string {
-  const s = String(v ?? '');
-  if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
-  return s;
-}
+const esc = csvCell;
 
 export function membersToCsv(rows: MemberCsvRow[]): string {
   const header = [

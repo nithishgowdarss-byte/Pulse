@@ -22,6 +22,7 @@ import { safeFetchJson } from './lib/apiUtils';
 import { LoginScreen } from './components/LoginScreen';
 import { PinManagementModal } from './components/PinManagementModal';
 import { BannerStudioModal } from './components/BannerStudioModal';
+import { DeskToolsModal } from './components/desk/DeskToolsModal';
 import { installAuthInterceptor, fetchMe, logout, AUTH_REQUIRED_EVENT } from './lib/auth';
 
 installAuthInterceptor();
@@ -62,6 +63,7 @@ export default function App() {
   const [authChecked, setAuthChecked] = useState<boolean>(false);
   const [showPinModal, setShowPinModal] = useState<boolean>(false);
   const [showBannerStudio, setShowBannerStudio] = useState<boolean>(false);
+  const [showDesk, setShowDesk] = useState<boolean>(false);
 
   // Fetch initial gym state
   const fetchData = async () => {
@@ -281,6 +283,7 @@ export default function App() {
         onViewModeChange={changeView}
         onLogout={handleLogout}
         onOpenPins={currentProfile.role === 'super_owner' ? () => setShowPinModal(true) : undefined}
+        onOpenDesk={() => setShowDesk(true)}
         onOpenBannerStudio={currentProfile.role === 'super_owner' || currentProfile.role === 'owner' ? () => setShowBannerStudio(true) : undefined}
         currentProfile={currentProfile}
         profiles={profiles}
@@ -353,6 +356,7 @@ export default function App() {
 
 
       {showPinModal && <PinManagementModal onClose={() => setShowPinModal(false)} />}
+      {showDesk && <DeskToolsModal role={currentProfile.role} branchId={activeBranchId} actorName={currentProfile.full_name} onClose={() => setShowDesk(false)} />}
       {showBannerStudio && <BannerStudioModal branches={branches} onClose={() => setShowBannerStudio(false)} />}
 
       {/* Multi-Branch Management Modal */}
