@@ -60,6 +60,7 @@ const HOST = process.env.HOST || '127.0.0.1';
 import { securityHeaders, createRateLimiter, requestLogger, errorHandler, isProduction, createBasicAuthGate } from './src/server/http';
 import { createPersistence } from './src/server/persistence';
 import { bodyValidator } from './src/server/validation';
+import { createVault, getSecretsKey, SealedSecret } from './src/server/secrets';
 import {
   hashPin, verifyPin, isValidPinFormat, encodeSession, sessionCookie, clearSessionCookie,
   loginThrottle, createAuthMiddleware, getSessionSecret, Session, readSession,
@@ -88,6 +89,9 @@ app.use('/api', createRateLimiter({ windowMs: 60_000, max: Number(process.env.AP
 // ---------------- Authentication (per-person PIN) ----------------
 // PIN hashes live apart from profiles/members so they are never returned by list endpoints.
 let pinHashes: Record<string, string> = {};
+// Encrypted third-party secrets (MSG91 auth keys...), keyed by vault_secret_id. Never returned by any API.
+let secretVault: Record<string, SealedSecret> = {};
+const vault = createVault(() => secretVault);
 const OWNER_SET = new Set(['super_owner', 'owner']);
 const DEV_PINS: Record<string, string> = {
   usr_super_1: '1111', usr_owner_1: '2222', usr_manager_1: '3333',
@@ -3789,6 +3793,7 @@ app.post('/api/branches/:id/sms-config', (req, res) => {
 
   const last4 = key.slice(-4);
   const vaultSecretId = `vsec_${id}_${Date.now()}`;
+  vault.put(vaultSecretId, key);
   const vaultSecretName = `msg91_branch_${id}_${Date.now()}`;
   const existing = branchSmsConfigs[id];
 
@@ -3891,6 +3896,7 @@ app.post('/api/branches/:id/sms-config/retire-previous', (req, res) => {
   }
 
   const oldLast4 = cfg.previous_msg91_last4;
+  vault.remove(cfg.previous_vault_secret_id);
   cfg.previous_vault_secret_id = null;
   cfg.previous_vault_secret_name = null;
   cfg.previous_msg91_last4 = null;
@@ -4104,6 +4110,8 @@ app.post('/api/rpc/:fn', (req, res) => {
         return res.status(400).json({ error: 'Invalid key length', code: 'INVALID_MSG91_KEY' });
       }
       const last4 = p_new_auth_key.slice(-4);
+      const rpcVaultId = `vsec_${p_branch_id}_${Date.now()}`;
+      vault.put(rpcVaultId, String(p_new_auth_key));
       const existing = branchSmsConfigs[p_branch_id];
       branchSmsConfigs[p_branch_id] = {
         ...existing,
@@ -4111,7 +4119,7 @@ app.post('/api/rpc/:fn', (req, res) => {
         previous_vault_secret_id: existing?.vault_secret_id || null,
         previous_vault_secret_name: existing?.vault_secret_name || null,
         previous_msg91_last4: existing?.msg91_last4 || null,
-        vault_secret_id: `vsec_${p_branch_id}_${Date.now()}`,
+        vault_secret_id: rpcVaultId,
         vault_secret_name: `msg91_branch_${p_branch_id}_${Date.now()}`,
         msg91_last4: last4,
         msg91_sender_id: p_sender_id || existing?.msg91_sender_id || 'PULSEF',
@@ -6912,11 +6920,13 @@ persistence = createPersistence({
     if (data.branchSmsConfigs !== undefined) branchSmsConfigs = data.branchSmsConfigs;
     if (data.pinHashes !== undefined) pinHashes = data.pinHashes;
     if (data.banners !== undefined) banners = data.banners;
+    if (data.secretVault !== undefined) secretVault = data.secretVault;
   },
 });
 persistence.load();
 seedPins();
 getSessionSecret();
+getSecretsKey();
 
 // Start Server with Vite Middleware
 async function startServer() {

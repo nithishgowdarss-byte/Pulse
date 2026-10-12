@@ -29,7 +29,7 @@ Seeded automatically when `NODE_ENV` is not `production` (or `PULSE_SEED_DEV_PIN
 
 ### Production
 
-Required env: `SESSION_SECRET` (>= 32 random chars; the server refuses to start without it) and
+Required env: `SESSION_SECRET` (>= 32 random chars; the server refuses to start without it), `SECRETS_KEY` (32 bytes hex; encrypts stored MSG91 keys with AES-256-GCM) and
 `SUPER_OWNER_PIN` (bootstraps the super owner's PIN on first boot; then set everyone else's PIN in the app).
 Optional: `PULSE_BASIC_AUTH`, `WHATSAPP_WEBHOOK_SECRET` (required for the WhatsApp webhook to accept calls),
 `TRUST_PROXY=1` behind a reverse proxy.
