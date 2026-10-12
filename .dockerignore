@@ -1,0 +1,12 @@
+node_modules
+dist
+build
+.data
+.git
+.env
+.env.*
+!.env.example
+*.log
+coverage
+*.pdf
+pulse-fitness-entire-codebase.*

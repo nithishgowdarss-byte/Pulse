@@ -15,6 +15,7 @@ import {
   Sparkles,
   FileDown,
 } from 'lucide-react';
+import { KeyRound, LogOut, ImagePlus } from 'lucide-react';
 import { UserRole, Profile, Branch } from '../types';
 import { useStaffNotifications } from '../hooks/useStaffNotifications';
 
@@ -28,11 +29,13 @@ interface NavbarProps {
   branches: Branch[];
   activeBranchId: string;
   onSelectBranch: (branchId: string) => void;
-  onProfileChange: (profile: Profile) => void;
+  onLogout: () => void;
+  onOpenPins?: () => void;
+  onOpenBannerStudio?: () => void;
   onOpenBranchManager: () => void;
   onResetSeed: () => void;
   onOpenExpoGuide: () => void;
-  onOpenCodebaseViewer: () => void;
+  onOpenCodebaseViewer?: () => void;
   onOpenFreeLlmApi?: () => void;
   onOpenTrainerStudio?: () => void;
   onOpenOwnerBroadcast?: () => void;
@@ -47,7 +50,9 @@ export const Navbar: React.FC<NavbarProps> = ({
   branches,
   activeBranchId,
   onSelectBranch,
-  onProfileChange,
+  onLogout,
+  onOpenPins,
+  onOpenBannerStudio,
   onOpenBranchManager,
   onResetSeed,
   onOpenExpoGuide,
@@ -68,7 +73,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   return (
     <header className="bg-zinc-950 border-b border-zinc-800 text-white sticky top-0 z-40 shadow-xl">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16 sm:h-20 gap-3">
+        <div className="flex flex-wrap items-center justify-between min-h-16 sm:min-h-20 py-2 gap-x-3 gap-y-2">
           
           {/* Left: Logo & Branch Switcher Dropdown */}
           <div className="flex items-center space-x-3">
@@ -121,7 +126,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
 
           {/* Center: Portal Navigation Mode Selector */}
-          <div className="hidden lg:flex items-center bg-zinc-900/90 p-1 rounded-2xl border border-zinc-800 shadow-inner space-x-1">
+          <div className="hidden xl:flex items-center bg-zinc-900/90 p-1 rounded-2xl border border-zinc-800 shadow-inner space-x-1">
             {/* Owner Portal (Visible to Owner Roles Only) */}
             {isOwnerRole && (
               <button
@@ -150,19 +155,6 @@ export const Navbar: React.FC<NavbarProps> = ({
               <span>TRAINER PORTAL</span>
             </button>
 
-            {/* Member App */}
-            <button
-              onClick={() => onViewModeChange('member_app')}
-              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-bold tracking-wide transition-all ${
-                viewMode === 'member_app'
-                  ? 'bg-indigo-600 text-white font-extrabold shadow-md shadow-indigo-600/30'
-                  : 'text-indigo-400 hover:text-indigo-300 hover:bg-indigo-500/10'
-              }`}
-            >
-              <User className="w-3.5 h-3.5" />
-              <span>MEMBER APP</span>
-            </button>
-
             {/* Client Handover */}
             <button
               onClick={() => onViewModeChange('client')}
@@ -178,7 +170,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
 
           {/* Right: User Profile & Tools */}
-          <div className="flex items-center space-x-2 sm:space-x-2.5">
+          <div className="flex flex-wrap items-center justify-end gap-2 ml-auto">
 
             {/* Staff In-App Notification Bell */}
             <div className="relative">
@@ -248,6 +240,14 @@ export const Navbar: React.FC<NavbarProps> = ({
               )}
             </div>
 
+            {onOpenBannerStudio && (
+              <button onClick={onOpenBannerStudio} title="Banner Studio: posters for offers, events and festivals" aria-label="Banner Studio"
+                className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-fuchsia-700 to-red-600 text-white text-xs font-black shadow-md">
+                <ImagePlus className="w-3.5 h-3.5" />
+                <span className="hidden xl:inline">Banners</span>
+              </button>
+            )}
+
             {/* FreeLLMAPI Gateway & Router Button */}
             {onOpenFreeLlmApi && (
               <button
@@ -256,7 +256,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-orange-950/80 via-zinc-900 to-zinc-900 border border-orange-500/50 hover:border-orange-400 text-orange-400 hover:text-orange-300 text-xs font-bold transition-all shadow-sm shadow-orange-500/10"
               >
                 <Zap className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
-                <span className="hidden sm:inline font-mono">FreeLLMAPI</span>
+                <span className="hidden xl:inline font-mono">FreeLLMAPI</span>
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
               </button>
             )}
@@ -265,7 +265,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             <button
               onClick={onOpenExpoGuide}
               title="View Expo React Native & Supabase Code"
-              className="hidden md:flex items-center space-x-1 px-3 py-1.5 rounded-xl bg-zinc-900 border border-zinc-700 text-zinc-300 text-xs hover:border-zinc-500 hover:text-white transition-all"
+              className="hidden 2xl:flex items-center space-x-1 px-3 py-1.5 rounded-xl bg-zinc-900 border border-zinc-700 text-zinc-300 text-xs hover:border-zinc-500 hover:text-white transition-all"
             >
               <Database className="w-3.5 h-3.5 text-red-400" />
               <span>Mobile Code</span>
@@ -279,20 +279,9 @@ export const Navbar: React.FC<NavbarProps> = ({
                 className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-red-600 via-orange-600 to-amber-600 hover:from-red-500 hover:to-orange-500 text-white text-xs font-black transition-all shadow-md shadow-red-600/30 cursor-pointer active:scale-95"
               >
                 <Zap className="w-3.5 h-3.5 fill-white text-white" />
-                <span className="hidden sm:inline">⚡ Dump Contacts</span>
+                <span className="hidden xl:inline">⚡ Dump Contacts</span>
               </button>
             )}
-
-            {/* Complete Codebase PDF & Source Viewer button */}
-            <button
-              onClick={onOpenCodebaseViewer}
-              title="Open Complete Codebase Viewer & Download PDF / TXT (109 files, 25,364 lines)"
-              className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-red-950/80 to-zinc-900 border border-red-500/50 hover:border-red-400 text-red-200 hover:text-white text-xs font-bold transition-all shadow-sm shadow-red-500/20 cursor-pointer active:scale-95"
-            >
-              <FileDown className="w-3.5 h-3.5 text-red-400 animate-pulse" />
-              <span className="hidden sm:inline">Codebase PDF / View</span>
-            </button>
-
 
             {/* User Account / Profile Switcher */}
             <div className="flex items-center bg-zinc-900 border border-zinc-800 rounded-2xl px-2.5 py-1.5 shadow-inner">
@@ -301,7 +290,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 alt={currentProfile.full_name}
                 className="w-7 h-7 sm:w-8 sm:h-8 rounded-full ring-2 ring-red-500/40 object-cover mr-2 flex-shrink-0"
               />
-              <div className="text-left mr-1">
+              <div className="text-left mr-1 hidden sm:block">
                 <div className="text-xs font-extrabold text-white truncate max-w-[90px] sm:max-w-[120px]">
                   {currentProfile.full_name}
                 </div>
@@ -311,39 +300,31 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </div>
               </div>
 
-              {/* Profile Select */}
-              <select
-                value={currentProfile.id}
-                onChange={(e) => {
-                  const sel = profiles.find(p => p.id === e.target.value);
-                  if (sel) onProfileChange(sel);
-                }}
-                className="bg-transparent text-xs text-zinc-400 focus:outline-none cursor-pointer border-l border-zinc-800 pl-1.5 py-0.5 font-semibold"
-              >
-                {profiles.map(p => {
-                  const bName = p.branch_name ? p.branch_name.replace('Pulse Fitness - ', '') : '';
-                  return (
-                    <option key={p.id} value={p.id} className="bg-zinc-900 text-white">
-                      {p.full_name} ({p.role.replace('_', ' ')}{bName ? ` • ${bName}` : ''})
-                    </option>
-                  );
-                })}
-              </select>
+              {onOpenPins && (
+                <button onClick={onOpenPins} title="Manage login PINs" aria-label="Manage login PINs"
+                  className="ml-1 p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800">
+                  <KeyRound className="w-4 h-4" />
+                </button>
+              )}
+              <button onClick={onLogout} title="Sign out" aria-label="Sign out"
+                className="ml-1 p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800">
+                <LogOut className="w-4 h-4" />
+              </button>
             </div>
 
-            {/* Reset Seed Data */}
-            <button
+            {/* Reset Seed Data (super owner, dev only; server blocks it in production) */}
+            {currentProfile.role === 'super_owner' && (<button
               onClick={onResetSeed}
               title="Reset Sample Data"
               className="p-2 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white hover:border-zinc-700 transition-all"
             >
               <RefreshCw className="w-4 h-4" />
-            </button>
+            </button>)}
           </div>
         </div>
 
         {/* Mobile View Navigation Tabs */}
-        <div className="lg:hidden flex items-center justify-between py-2 border-t border-zinc-900 overflow-x-auto gap-2">
+        <div className="xl:hidden flex items-center justify-between py-2 border-t border-zinc-900 overflow-x-auto gap-2">
           {isOwnerRole && (
             <button
               onClick={() => onViewModeChange('owner')}
@@ -361,14 +342,6 @@ export const Navbar: React.FC<NavbarProps> = ({
             }`}
           >
             Trainer Portal
-          </button>
-          <button
-            onClick={() => onViewModeChange('member_app')}
-            className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold text-center whitespace-nowrap transition-all ${
-              viewMode === 'member_app' ? 'bg-indigo-600 text-white' : 'bg-indigo-950 text-indigo-300'
-            }`}
-          >
-            Member App
           </button>
           <button
             onClick={() => onViewModeChange('client')}

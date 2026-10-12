@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { MemberOffers } from './MemberOffers';
 import { Profile, Member, AttendanceRecord, PaymentRecord, MemberMeasurement, GymAnnouncement, MemberFreezeRequest } from '../types';
 import { Dumbbell, QrCode, Calendar, Clock, CreditCard, Scale, PauseCircle, Bell, User, Phone, CheckCircle2, AlertCircle, RefreshCw, Send, Sparkles } from 'lucide-react';
 import { calculateDaysRemaining } from '../lib/membership';
@@ -394,6 +395,7 @@ export const MemberAppView: React.FC<MemberAppViewProps> = ({ currentProfile, on
         {/* TAB 4: GYM ANNOUNCEMENTS */}
         {activeTab === 'announcements' && (
           <div className="space-y-3">
+            <MemberOffers />
             <h4 className="text-xs font-black text-zinc-300 uppercase tracking-wider">Pulse Gym Notice Board</h4>
 
             <div className="space-y-3">

@@ -1,7 +1,7 @@
+import 'dotenv/config';
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
-import { createServer as createViteServer } from 'vite';
 import {
   Profile,
   Member,
@@ -39,6 +39,7 @@ import {
   DayRegisterSummary
 } from './src/types';
 import { PACKAGE_CONFIGS } from './src/lib/membership';
+import { BANNER_TYPES, THEMES, FESTIVALS, templateCopy, parseAiCopy, bannerPrompt, BannerInput, BannerCopy } from './src/lib/bannerTemplates';
 import { getDefaultCommissionRate, calculateCommissionAmount } from './src/lib/commission';
 import { evaluateAutomations, DEFAULT_AUTOMATION_RULES } from './src/lib/automationEngine';
 import {
@@ -53,9 +54,185 @@ import {
 import { LLMProviderId, FreeLLMChatMessage } from './src/types';
 
 const app = express();
-const PORT = 3000;
+const PORT = Number(process.env.PORT) || 3000;
+const HOST = process.env.HOST || '127.0.0.1';
 
-app.use(express.json());
+import { securityHeaders, createRateLimiter, requestLogger, errorHandler, isProduction, createBasicAuthGate } from './src/server/http';
+import { createPersistence } from './src/server/persistence';
+import { bodyValidator } from './src/server/validation';
+import {
+  hashPin, verifyPin, isValidPinFormat, encodeSession, sessionCookie, clearSessionCookie,
+  loginThrottle, createAuthMiddleware, getSessionSecret, Session, readSession,
+} from './src/server/auth';
+
+app.disable('x-powered-by');
+app.set('trust proxy', process.env.TRUST_PROXY === '1' ? 1 : false);
+app.use(securityHeaders);
+app.use(requestLogger);
+app.use(createBasicAuthGate(process.env.PULSE_BASIC_AUTH));
+if (isProduction() && !process.env.PULSE_BASIC_AUTH) {
+  console.warn('[security] PULSE_BASIC_AUTH not set (optional extra perimeter login on top of PIN auth).');
+}
+app.use(express.json({ limit: process.env.JSON_LIMIT || '1mb' }));
+app.use('/api', bodyValidator);
+app.use((req, res, next) => {
+  if (req.method !== 'GET' && req.method !== 'HEAD' && req.method !== 'OPTIONS') {
+    res.on('finish', () => { if (res.statusCode < 400) persistence?.markDirty(); });
+  }
+  next();
+});
+app.use('/api/freellmapi', createRateLimiter({ windowMs: 60_000, max: Number(process.env.AI_RATE_LIMIT_PER_MIN) || 20 }));
+app.use('/api', createRateLimiter({ windowMs: 60_000, max: Number(process.env.API_RATE_LIMIT_PER_MIN) || 600 }));
+
+
+// ---------------- Authentication (per-person PIN) ----------------
+// PIN hashes live apart from profiles/members so they are never returned by list endpoints.
+let pinHashes: Record<string, string> = {};
+const OWNER_SET = new Set(['super_owner', 'owner']);
+const DEV_PINS: Record<string, string> = {
+  usr_super_1: '1111', usr_owner_1: '2222', usr_manager_1: '3333',
+  usr_trainer_1: '4444', usr_trainer_2: '4444', usr_trainer_3: '4444', usr_trainer_4: '4444', usr_trainer_5: '4444',
+};
+function seedPins() {
+  if (isProduction() && process.env.PULSE_SEED_DEV_PINS !== '1') {
+    const boot = process.env.SUPER_OWNER_PIN;
+    if (!pinHashes.usr_super_1 && boot && isValidPinFormat(boot)) pinHashes.usr_super_1 = hashPin(boot);
+    return;
+  }
+  for (const [id, pin] of Object.entries(DEV_PINS)) if (!pinHashes[id]) pinHashes[id] = hashPin(pin);
+  for (const m of members) if (!pinHashes[m.id]) pinHashes[m.id] = hashPin('5555');
+}
+const pinVersion = (id: string) => (pinHashes[id] || '').split('$')[2]?.slice(0, 10) || '';
+const cleanPhone10 = (v: unknown) => String(v ?? '').replace(/\D/g, '').slice(-10);
+const isMemberActiveAccount = (m: any) => m && !m.is_archived && !m.archived_at;
+
+function staffBranchIds(p: Profile | undefined): string[] {
+  if (!p) return [];
+  return p.assigned_branch_ids?.length ? p.assigned_branch_ids : p.branch_id ? [p.branch_id] : [];
+}
+function sessionProfile(s: Session): any {
+  if (s.kind === 'staff') return profiles.find((p) => p.id === s.id) || null;
+  const m: any = members.find((x) => x.id === s.id);
+  if (!m) return null;
+  return { id: m.id, full_name: m.full_name, role: 'member', phone: m.phone, email: m.email, branch_id: m.branch_id, branch_name: m.branch_name, created_at: m.created_at };
+}
+
+app.post('/api/auth/login', (req, res) => {
+  const phone = cleanPhone10(req.body?.phone);
+  const pin = req.body?.pin;
+  if (phone.length !== 10 || !isValidPinFormat(pin)) {
+    return res.status(400).json({ error: 'Enter your 10-digit phone number and 4-8 digit PIN', code: 'BAD_INPUT' });
+  }
+  const ipKey = `ip:${req.ip}`;
+  const acctKey = `acct:${phone}`;
+  const locked = loginThrottle.isLocked(acctKey) || loginThrottle.isLocked(ipKey);
+  if (locked) {
+    res.setHeader('Retry-After', String(locked));
+    return res.status(429).json({ error: `Too many wrong PINs. Try again in ${Math.ceil(locked / 60)} min.`, code: 'LOCKED' });
+  }
+  const candidates: { kind: 'staff' | 'member'; id: string; role: string }[] = [
+    ...profiles.filter((p) => cleanPhone10(p.phone) === phone).map((p) => ({ kind: 'staff' as const, id: p.id, role: p.role })),
+    ...members.filter((m: any) => cleanPhone10(m.phone) === phone && isMemberActiveAccount(m)).map((m) => ({ kind: 'member' as const, id: m.id, role: 'member' })),
+  ];
+  // Try every candidate so timing does not reveal which phones exist
+  let hit: (typeof candidates)[number] | null = null;
+  for (const c of candidates) if (verifyPin(pin, pinHashes[c.id]) && !hit) hit = c;
+  if (!candidates.length) verifyPin(pin, hashPin('0000'));
+  if (!hit && candidates.length && candidates.every((c) => !pinHashes[c.id])) {
+    loginThrottle.fail(acctKey);
+    const memberOnly = candidates.every((c) => c.kind === 'member');
+    return res.status(403).json({
+      error: memberOnly
+        ? 'Your account does not have a PIN yet. Please ask the front desk at your branch to set one for you.'
+        : 'No PIN has been set for this account yet. Please ask the owner to set one.',
+      code: 'NO_PIN',
+    });
+  }
+  if (!hit) {
+    loginThrottle.fail(acctKey);
+    loginThrottle.fail(ipKey);
+    return res.status(401).json({ error: 'Wrong phone number or PIN', code: 'BAD_CREDENTIALS' });
+  }
+  loginThrottle.success(acctKey);
+  const token = encodeSession({ kind: hit.kind, id: hit.id, role: hit.role, pv: pinVersion(hit.id) });
+  res.setHeader('Set-Cookie', sessionCookie(token));
+  auditLogs.unshift({ id: `aud_${Date.now()}`, actor_id: hit.id, action: 'auth.login', entity_type: 'session', entity_id: hit.id, created_at: new Date().toISOString() } as any);
+  res.json({ kind: hit.kind, profile: sessionProfile({ ...hit, exp: 0 }) });
+});
+
+app.post('/api/auth/logout', (_req, res) => {
+  res.setHeader('Set-Cookie', clearSessionCookie());
+  res.json({ success: true });
+});
+
+app.use(
+  createAuthMiddleware({
+    sessionValid: (s) => !!sessionProfile(s) && (s.kind !== 'member' || isMemberActiveAccount(members.find((m) => m.id === s.id))) && s.pv === pinVersion(s.id) && !!pinHashes[s.id],
+    branchIdsFor: (s) => (s.role === 'super_owner' || s.role === 'owner' ? null : s.kind === 'member' ? [] : staffBranchIds(profiles.find((p) => p.id === s.id))),
+    memberBranch: (id) => members.find((m) => m.id === id)?.branch_id,
+    entityBranch: (p) => {
+      const mb = (id?: string) => (id ? members.find((m) => m.id === id)?.branch_id : undefined);
+      let m: RegExpMatchArray | null;
+      if ((m = p.match(/^\/api\/freeze-requests\/([^/]+)$/))) { const r = freezeRequests.find((x) => x.id === m![1]); return r ? r.branch_id || mb(r.member_id) || '' : undefined; }
+      if ((m = p.match(/^\/api\/leads\/([^/]+)(\/convert)?$/))) { const r = leads.find((x) => x.id === m![1]); return r ? r.branch_id || '' : undefined; }
+      if ((m = p.match(/^\/api\/retention\/alerts\/([^/]+)\/resolve$/))) { const r = retentionAlerts.find((x) => x.id === m![1]); return r ? r.branch_id || mb(r.member_id) || '' : undefined; }
+      if ((m = p.match(/^\/api\/winback\/enrollments\/([^/]+)/))) { const r = winbackEnrollments.find((x) => x.id === m![1]); return r ? r.branch_id || mb(r.member_id) || '' : undefined; }
+      return undefined;
+    },
+    entityOwner: (p) => {
+      const m = p.match(/^\/api\/notifications\/([^/]+)\/read$/);
+      if (!m) return undefined;
+      return staffNotifications.find((n) => n.id === m[1])?.user_id;
+    },
+  })
+);
+
+// Public: answers 200 with profile null when signed out (avoids noisy 401s on first load)
+app.get('/api/auth/me', (req, res) => {
+  const s = readSession(req);
+  const valid = s && sessionProfile(s) && s.pv === pinVersion(s.id) && !!pinHashes[s.id] && (s.kind !== 'member' || isMemberActiveAccount(members.find((m) => m.id === s.id)));
+  res.setHeader('Cache-Control', 'no-store');
+  res.json(valid ? { kind: s!.kind, profile: sessionProfile(s!) } : { kind: null, profile: null });
+});
+
+// PIN administration: super owner only (enforced again in authorize())
+app.get('/api/auth/pins', (_req, res) => {
+  res.json([
+    ...profiles.map((p) => ({ id: p.id, kind: 'staff', name: p.full_name, role: p.role, phone: p.phone, has_pin: !!pinHashes[p.id] })),
+    ...members.map((m) => ({ id: m.id, kind: 'member', name: m.full_name, role: 'member', phone: m.phone, has_pin: !!pinHashes[m.id] })),
+  ]);
+});
+app.put('/api/auth/pins/:id', (req, res) => {
+  const { id } = req.params;
+  const pin = req.body?.pin;
+  if (!profiles.some((p) => p.id === id) && !members.some((m) => m.id === id)) return res.status(404).json({ error: 'User not found' });
+  if (!isValidPinFormat(pin)) return res.status(400).json({ error: 'PIN must be 4-8 digits' });
+  if (/^(\d)\1+$/.test(pin) && isProduction()) return res.status(400).json({ error: 'PIN is too simple' });
+  pinHashes[id] = hashPin(pin);
+  const actor = (req as any).auth.session.id;
+  auditLogs.unshift({ id: `aud_${Date.now()}`, actor_id: actor, action: 'auth.pin_set', entity_type: 'user', entity_id: id, created_at: new Date().toISOString() } as any);
+  res.json({ success: true, id });
+});
+app.delete('/api/auth/pins/:id', (req, res) => {
+  delete pinHashes[req.params.id];
+  res.json({ success: true, id: req.params.id });
+});
+
+// Liveness / readiness probe (used by Docker HEALTHCHECK)
+app.get(['/healthz', '/api/health'], (_req, res) => {
+  res.json({ status: 'ok', uptimeSec: Math.round(process.uptime()), persistence: persistence?.describe() ?? 'disabled', time: new Date().toISOString() });
+});
+
+// Destructive developer endpoints are disabled in production unless explicitly allowed
+const devEndpointsAllowed = !isProduction() || process.env.PULSE_ALLOW_DEV_ENDPOINTS === '1';
+app.use(['/api/reset-seed'], (req, res, next) => {
+  if (!devEndpointsAllowed) return res.status(403).json({ error: 'Disabled in production', code: 'DEV_ENDPOINT_DISABLED' });
+  next();
+});
+app.delete('/api/members/:id', (req, res, next) => {
+  if (!devEndpointsAllowed) return res.status(403).json({ error: 'Hard delete disabled in production; archive instead', code: 'DEV_ENDPOINT_DISABLED' });
+  next();
+});
 
 // Multi-Branch Seed Data (3 Owned & Operated Locations)
 let branches: Branch[] = [
@@ -2985,146 +3162,6 @@ app.post('/api/payments', (req, res) => {
   recordCommissionSettlementOnPayment(payId, member, payVal, `Payment top-up settlement`);
 
   res.status(201).json({ success: true, payment: payRecord, member });
-});
-
-// Entire Codebase PDF & TXT Endpoints
-app.get('/api/download-codebase-pdf', (req, res) => {
-  const pdfCandidates = [
-    path.resolve(process.cwd(), 'public', 'pulse-fitness-entire-codebase.pdf'),
-    path.resolve(process.cwd(), 'pulse-fitness-entire-codebase.pdf')
-  ];
-
-  const pdfPath = pdfCandidates.find(p => fs.existsSync(p));
-
-  if (pdfPath) {
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Accept-Ranges', 'bytes');
-    res.download(pdfPath, 'pulse-fitness-entire-codebase.pdf');
-  } else {
-    res.status(404).json({ error: 'Codebase PDF is not found.' });
-  }
-});
-
-app.get('/api/view-codebase-pdf', (req, res) => {
-  const pdfCandidates = [
-    path.resolve(process.cwd(), 'public', 'pulse-fitness-entire-codebase.pdf'),
-    path.resolve(process.cwd(), 'pulse-fitness-entire-codebase.pdf')
-  ];
-
-  const pdfPath = pdfCandidates.find(p => fs.existsSync(p));
-
-  if (pdfPath) {
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', 'inline; filename="pulse-fitness-entire-codebase.pdf"');
-    res.setHeader('Accept-Ranges', 'bytes');
-    res.sendFile(pdfPath);
-  } else {
-    res.status(404).json({ error: 'Codebase PDF is not found.' });
-  }
-});
-
-app.get('/api/download-codebase-txt', (req, res) => {
-  const txtCandidates = [
-    path.resolve(process.cwd(), 'public', 'pulse-fitness-entire-codebase.txt'),
-    path.resolve(process.cwd(), 'pulse-fitness-entire-codebase.txt')
-  ];
-
-  const txtPath = txtCandidates.find(p => fs.existsSync(p));
-
-  if (txtPath) {
-    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-    res.download(txtPath, 'pulse-fitness-entire-codebase.txt');
-  } else {
-    res.status(404).json({ error: 'Codebase TXT is not found.' });
-  }
-});
-
-app.get('/api/codebase/manifest', (req, res) => {
-  const rootDir = process.cwd();
-  function getAllFiles(dir, fileList: string[] = []) {
-    const files = fs.readdirSync(dir);
-    for (const file of files) {
-      const filePath = path.join(dir, file);
-      const stat = fs.statSync(filePath);
-      if (stat.isDirectory()) {
-        if (!['node_modules', 'dist', '.git', '.github', '.vite'].includes(file)) {
-          getAllFiles(filePath, fileList);
-        }
-      } else {
-        const ext = path.extname(file).toLowerCase();
-        const base = path.basename(file);
-        if (
-          !['.png', '.ico', '.svg', '.jpeg', '.jpg', '.pdf', '.lock'].includes(ext) &&
-          file !== 'bun.lock' &&
-          file !== 'package-lock.json' &&
-          !base.includes('entire-codebase') &&
-          !base.startsWith('.') &&
-          !dir.includes('.aistudio')
-        ) {
-          fileList.push(filePath);
-        }
-      }
-    }
-    return fileList;
-  }
-
-  const allFiles = getAllFiles(rootDir);
-  const items = allFiles.map((fp, idx) => {
-    const relPath = path.relative(rootDir, fp).replace(/\\/g, '/');
-    const stat = fs.statSync(fp);
-    const content = fs.readFileSync(fp, 'utf8');
-    const lines = content.split('\n');
-    let category = 'Other';
-    if (relPath.startsWith('src/components/')) category = 'Components';
-    else if (relPath.startsWith('src/hooks/')) category = 'Hooks';
-    else if (relPath.startsWith('src/lib/')) category = 'Business Logic (Lib)';
-    else if (relPath.startsWith('src/types/')) category = 'TypeScript Types';
-    else if (relPath === 'server.ts') category = 'Server Backend';
-    else if (relPath.startsWith('supabase/')) category = 'Database Migrations';
-    else if (relPath.startsWith('scripts/')) category = 'Scripts';
-    else if (relPath === 'package.json' || relPath === 'tsconfig.json' || relPath === 'vite.config.ts' || relPath === 'metadata.json') category = 'Configuration';
-
-    return {
-      index: idx + 1,
-      path: relPath,
-      size: stat.size,
-      linesCount: lines.length,
-      category
-    };
-  });
-
-  res.json({
-    totalFiles: items.length,
-    totalLines: items.reduce((acc, curr) => acc + curr.linesCount, 0),
-    files: items
-  });
-});
-
-app.get('/api/codebase/file', (req, res) => {
-  const filePath = req.query.path as string;
-  if (!filePath) {
-    return res.status(400).json({ error: 'File path required' });
-  }
-
-  const safeRelPath = path.normalize(filePath).replace(/^(\.\.(\/|\\|$))+/, '');
-  const absPath = path.resolve(process.cwd(), safeRelPath);
-
-  if (!absPath.startsWith(process.cwd()) || !fs.existsSync(absPath)) {
-    return res.status(404).json({ error: 'File not found' });
-  }
-
-  try {
-    const content = fs.readFileSync(absPath, 'utf8');
-    const lines = content.split('\n');
-    res.json({
-      path: safeRelPath,
-      linesCount: lines.length,
-      content,
-      lines
-    });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
 });
 
 // Line-Level Payroll & Commission Settlements API (Matches SQL View & RPC get_payroll_lines)
@@ -6490,12 +6527,18 @@ app.post('/api/freellmapi/update-config', (req, res) => {
     return res.status(400).json({ error: 'Invalid provider ID' });
   }
 
-  updateProviderConfig(provider as LLMProviderId, {
-    apiKey,
-    model,
-    enabled,
-    priority,
-  });
+  if (apiKey !== undefined && process.env.PULSE_ALLOW_RUNTIME_KEYS !== '1') {
+    return res.status(403).json({ error: 'API keys must be configured via server environment variables', code: 'RUNTIME_KEYS_DISABLED' });
+  }
+  if (model !== undefined && (typeof model !== 'string' || model.length > 120)) {
+    return res.status(400).json({ error: 'Invalid model' });
+  }
+  const updates: Record<string, unknown> = {};
+  if (apiKey !== undefined) updates.apiKey = String(apiKey);
+  if (model !== undefined) updates.model = model;
+  if (enabled !== undefined) updates.enabled = Boolean(enabled);
+  if (priority !== undefined && Number.isFinite(Number(priority))) updates.priority = Number(priority);
+  updateProviderConfig(provider as LLMProviderId, updates);
 
   res.json({ success: true, status: getFreeLLMStatus() });
 });
@@ -6690,6 +6733,97 @@ Branch: ${branchName}`,
   }
 });
 
+
+// ---------------- Banner Studio (owners create; staff & members view active ones) ----------------
+interface BannerRecord {
+  id: string; type: string; title: string; festival?: string; date?: string; venue?: string; offer?: string; price?: string;
+  branch_ids: string[]; theme: string; language: 'en' | 'kn' | 'both'; copy: BannerCopy;
+  status: 'active' | 'archived'; visible_to_members: boolean; valid_until?: string;
+  copy_source: 'ai' | 'template'; created_by: string; created_by_name: string; created_at: string;
+}
+let banners: BannerRecord[] = [];
+const str = (v: unknown, n: number) => (typeof v === 'string' ? v.trim().slice(0, n) : '');
+
+function readBannerInput(b: any): { input?: BannerInput & { theme: string; branch_ids: string[] }; error?: string } {
+  if (!BANNER_TYPES.includes(b?.type)) return { error: `type must be one of ${BANNER_TYPES.join(', ')}` };
+  const theme = THEMES.includes(b.theme) ? b.theme : 'pulse';
+  const festival = b.type === 'festival' ? (b.festival in FESTIVALS ? b.festival : null) : undefined;
+  if (festival === null) return { error: `festival must be one of ${Object.keys(FESTIVALS).join(', ')}` };
+  const branch_ids = Array.isArray(b.branch_ids) && b.branch_ids.length ? b.branch_ids.filter((x: any) => branches.some((br) => br.id === x)) : branches.map((br) => br.id);
+  if (!branch_ids.length) return { error: 'Pick at least one valid branch' };
+  const language = ['en', 'kn', 'both'].includes(b.language) ? b.language : 'en';
+  return {
+    input: {
+      type: b.type, title: str(b.title, 80), festival: festival || undefined, date: str(b.date, 60), venue: str(b.venue, 100),
+      offer: str(b.offer, 100), price: str(b.price, 30), language, theme, branch_ids,
+      branchNames: branch_ids.map((id: string) => branches.find((br) => br.id === id)?.name.replace('Pulse Fitness - ', '') || id),
+    },
+  };
+}
+
+app.post('/api/banners/copy', async (req, res) => {
+  const { input, error } = readBannerInput(req.body);
+  if (!input) return res.status(400).json({ error });
+  const fallback = templateCopy(input);
+  if (req.body?.useAi === false) return res.json({ copy: fallback, source: 'template' });
+  try {
+    const completion = await executeFreeLLMCompletion([
+      { role: 'system', content: 'You are a concise bilingual (English/Kannada) marketing copywriter for an Indian gym. Output strict JSON only.' },
+      { role: 'user', content: bannerPrompt(input) },
+    ]);
+    const ai = completion.model !== 'pulse-local-smart-engine' ? parseAiCopy(completion.content) : null;
+    if (ai) {
+      if (!ai.kn) ai.kn = fallback.kn;
+      return res.json({ copy: ai, source: 'ai', model: completion.model });
+    }
+  } catch (err: any) {
+    console.warn('[banners] AI copy failed, using template:', err?.message);
+  }
+  res.json({ copy: fallback, source: 'template' });
+});
+
+app.get('/api/banners', (req, res) => {
+  const s: Session = (req as any).auth.session;
+  const today = getTodayStr();
+  if (OWNER_SET.has(s.role)) return res.json(banners);
+  // Staff & members: only active, member-visible, unexpired banners for their branch
+  const branchId = s.kind === 'member' ? members.find((m) => m.id === s.id)?.branch_id : profiles.find((p) => p.id === s.id)?.branch_id;
+  res.json(
+    banners.filter((b) => b.status === 'active' && b.visible_to_members && (!b.valid_until || b.valid_until >= today) && (!branchId || b.branch_ids.includes(branchId)))
+  );
+});
+
+app.post('/api/banners', (req, res) => {
+  const { input, error } = readBannerInput(req.body);
+  if (!input) return res.status(400).json({ error });
+  const c = req.body?.copy;
+  const copy: BannerCopy = c && typeof c === 'object' && str(c.headline, 80)
+    ? { headline: str(c.headline, 80), subline: str(c.subline, 110), body: str(c.body, 260), cta: str(c.cta, 50),
+        kn: c.kn && typeof c.kn === 'object' ? { headline: str(c.kn.headline, 80), subline: str(c.kn.subline, 110), body: str(c.kn.body, 260), cta: str(c.kn.cta, 50) } : undefined }
+    : templateCopy(input);
+  const s: Session = (req as any).auth.session;
+  const actor = profiles.find((p) => p.id === s.id);
+  const valid_until = /^\d{4}-\d{2}-\d{2}$/.test(req.body?.valid_until || '') ? req.body.valid_until : undefined;
+  const rec: BannerRecord = {
+    id: `bnr_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+    type: input.type, title: input.title, festival: input.festival, date: input.date, venue: input.venue, offer: input.offer, price: input.price,
+    branch_ids: input.branch_ids, theme: input.theme, language: input.language || 'en', copy,
+    status: 'active', visible_to_members: req.body?.visible_to_members !== false, valid_until,
+    copy_source: req.body?.copy_source === 'ai' ? 'ai' : 'template', created_by: s.id, created_by_name: actor?.full_name || s.id, created_at: new Date().toISOString(),
+  };
+  banners.unshift(rec);
+  if (banners.length > 500) banners.length = 500;
+  res.status(201).json(rec);
+});
+
+app.put('/api/banners/:id', (req, res) => {
+  const b = banners.find((x) => x.id === req.params.id);
+  if (!b) return res.status(404).json({ error: 'Banner not found' });
+  if (req.body?.status === 'active' || req.body?.status === 'archived') b.status = req.body.status;
+  if (typeof req.body?.visible_to_members === 'boolean') b.visible_to_members = req.body.visible_to_members;
+  res.json(b);
+});
+
 // Reset Seed Data
 
 app.post('/api/reset-seed', (req, res) => {
@@ -6708,9 +6842,87 @@ app.delete('/api/members/:id', (req, res) => {
   res.json({ success: true, id });
 });
 
+// Durable storage: snapshot all collections to a JSON file (DATA_DIR) and restore on boot
+var persistence: ReturnType<typeof createPersistence> | null = null;
+persistence = createPersistence({
+  dataDir: process.env.DATA_DIR || (isProduction() ? '/data' : path.join(process.cwd(), '.data')),
+  enabled: process.env.PERSISTENCE !== 'off',
+  snapshot: () => ({
+    branches,
+    profiles,
+    members,
+    attendanceLogs,
+    staffAttendanceLogs,
+    exportLogs,
+    commissionSettlements,
+    paymentHistory,
+    crmActivities,
+    leads,
+    automationRules,
+    automationLogs,
+    auditLogs,
+    freezeRequests,
+    measurements,
+    announcements,
+    memberRiskScores,
+    retentionAlerts,
+    autoDebitAttempts,
+    retentionOutreachLogs,
+    staffNotifications,
+    memberChurnPredictions,
+    winbackCampaigns,
+    winbackEnrollments,
+    winbackAttempts,
+    balanceReminderLogs,
+    balanceReminderSettings,
+    branchRotationLogs,
+    msg91DltTemplates,
+    branchSmsConfigs
+  }),
+  restore: (data: any) => {
+    if (data.branches !== undefined) branches = data.branches;
+    if (data.profiles !== undefined) profiles = data.profiles;
+    if (data.members !== undefined) members = data.members;
+    if (data.attendanceLogs !== undefined) attendanceLogs = data.attendanceLogs;
+    if (data.staffAttendanceLogs !== undefined) staffAttendanceLogs = data.staffAttendanceLogs;
+    if (data.exportLogs !== undefined) exportLogs = data.exportLogs;
+    if (data.commissionSettlements !== undefined) commissionSettlements = data.commissionSettlements;
+    if (data.paymentHistory !== undefined) paymentHistory = data.paymentHistory;
+    if (data.crmActivities !== undefined) crmActivities = data.crmActivities;
+    if (data.leads !== undefined) leads = data.leads;
+    if (data.automationRules !== undefined) automationRules = data.automationRules;
+    if (data.automationLogs !== undefined) automationLogs = data.automationLogs;
+    if (data.auditLogs !== undefined) auditLogs = data.auditLogs;
+    if (data.freezeRequests !== undefined) freezeRequests = data.freezeRequests;
+    if (data.measurements !== undefined) measurements = data.measurements;
+    if (data.announcements !== undefined) announcements = data.announcements;
+    if (data.memberRiskScores !== undefined) memberRiskScores = data.memberRiskScores;
+    if (data.retentionAlerts !== undefined) retentionAlerts = data.retentionAlerts;
+    if (data.autoDebitAttempts !== undefined) autoDebitAttempts = data.autoDebitAttempts;
+    if (data.retentionOutreachLogs !== undefined) retentionOutreachLogs = data.retentionOutreachLogs;
+    if (data.staffNotifications !== undefined) staffNotifications = data.staffNotifications;
+    if (data.memberChurnPredictions !== undefined) memberChurnPredictions = data.memberChurnPredictions;
+    if (data.winbackCampaigns !== undefined) winbackCampaigns = data.winbackCampaigns;
+    if (data.winbackEnrollments !== undefined) winbackEnrollments = data.winbackEnrollments;
+    if (data.winbackAttempts !== undefined) winbackAttempts = data.winbackAttempts;
+    if (data.balanceReminderLogs !== undefined) balanceReminderLogs = data.balanceReminderLogs;
+    if (data.balanceReminderSettings !== undefined) balanceReminderSettings = data.balanceReminderSettings;
+    if (data.branchRotationLogs !== undefined) branchRotationLogs = data.branchRotationLogs;
+    if (data.msg91DltTemplates !== undefined) msg91DltTemplates = data.msg91DltTemplates;
+    if (data.branchSmsConfigs !== undefined) branchSmsConfigs = data.branchSmsConfigs;
+    if (data.pinHashes !== undefined) pinHashes = data.pinHashes;
+    if (data.banners !== undefined) banners = data.banners;
+  },
+});
+persistence.load();
+seedPins();
+getSessionSecret();
+
 // Start Server with Vite Middleware
 async function startServer() {
+  app.use('/api', (_req, res) => res.status(404).json({ error: 'Not found' }));
   if (process.env.NODE_ENV !== 'production') {
+    const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
@@ -6718,15 +6930,51 @@ async function startServer() {
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
+    // Never serve server bundles or source maps from the web root
+    app.use((req, res, next) => (/\.(cjs|map)$/i.test(req.path) ? res.status(404).end() : next()));
+    app.use(
+      express.static(distPath, {
+        index: false,
+        setHeaders: (res, filePath) => {
+          const base = path.basename(filePath);
+          if (base === 'sw.js' || base === 'index.html' || base.endsWith('.webmanifest')) {
+            res.setHeader('Cache-Control', 'no-cache');
+          } else if (filePath.includes(`${path.sep}assets${path.sep}`)) {
+            res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+          }
+        },
+      })
+    );
     app.get('*', (req, res) => {
+      res.setHeader('Cache-Control', 'no-cache');
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Pulse Fitness Phase 2 Server running at http://localhost:${PORT}`);
+  app.use(errorHandler);
+
+  const server = app.listen(PORT, HOST, () => {
+    console.log(`Pulse Fitness Phase 2 Server running at http://${HOST}:${PORT}`);
   });
+
+  const shutdown = (signal: string) => {
+    console.log(`[shutdown] ${signal} received, flushing data`);
+    persistence?.flush();
+    server.close(() => process.exit(0));
+    setTimeout(() => process.exit(0), 5000).unref();
+  };
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
 }
 
-startServer();
+export { app };
+
+if (process.env.VITEST) {
+  app.use('/api', (_req, res) => res.status(404).json({ error: 'Not found' }));
+  app.use(errorHandler);
+} else {
+  startServer().catch((err) => {
+    console.error('[fatal] failed to start server', err);
+    process.exit(1);
+  });
+}

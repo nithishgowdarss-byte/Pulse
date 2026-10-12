@@ -16,10 +16,18 @@ import { OfflineBanner } from './components/OfflineBanner';
 import { FreeLlmApiModal } from './components/FreeLlmApiModal';
 import { TrainerAiStudioModal } from './components/TrainerAiStudioModal';
 import { OwnerAiBroadcastModal } from './components/OwnerAiBroadcastModal';
-import { CodebaseViewerModal } from './components/CodebaseViewerModal';
 import { Profile, Member, UserRole, PlanPackage, PaymentMethod, Branch } from './types';
 
 import { safeFetchJson } from './lib/apiUtils';
+import { LoginScreen } from './components/LoginScreen';
+import { PinManagementModal } from './components/PinManagementModal';
+import { BannerStudioModal } from './components/BannerStudioModal';
+import { installAuthInterceptor, fetchMe, logout, AUTH_REQUIRED_EVENT } from './lib/auth';
+
+installAuthInterceptor();
+
+const isOwnerLike = (p: Profile | null) => !!p && (p.role === 'owner' || p.role === 'super_owner' || p.role === 'branch_manager');
+const defaultViewFor = (p: Profile): ViewMode => (p.role === 'member' ? 'member_app' : p.role === 'trainer' ? 'trainer' : 'owner');
 import { toast } from './lib/toast';
 
 export default function App() {
@@ -41,7 +49,6 @@ export default function App() {
   // Action Modals
   const [isBulkExportOpen, setIsBulkExportOpen] = useState<boolean>(false);
   const [showExpoGuide, setShowExpoGuide] = useState<boolean>(false);
-  const [showCodebaseViewer, setShowCodebaseViewer] = useState<boolean>(false);
   const [showFreeLlmApiModal, setShowFreeLlmApiModal] = useState<boolean>(false);
   const [showTrainerStudioModal, setShowTrainerStudioModal] = useState<boolean>(false);
   const [trainerStudioTargetMember, setTrainerStudioTargetMember] = useState<Member | null>(null);
@@ -52,6 +59,9 @@ export default function App() {
   const [settlementModalTrainer, setSettlementModalTrainer] = useState<{ trainer: Profile; pendingAmount: number } | null>(null);
 
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [authChecked, setAuthChecked] = useState<boolean>(false);
+  const [showPinModal, setShowPinModal] = useState<boolean>(false);
+  const [showBannerStudio, setShowBannerStudio] = useState<boolean>(false);
 
   // Fetch initial gym state
   const fetchData = async () => {
@@ -64,16 +74,8 @@ export default function App() {
 
       if (profs && profs.length > 0) {
         setProfiles(profs);
-        // Only set default profile if not set yet
-        setCurrentProfile((prev) => {
-          if (!prev) {
-            const defaultOwner = profs.find(p => p.role === 'owner' || p.role === 'super_owner') || profs[0];
-            return defaultOwner;
-          }
-          // Refresh existing profile data
-          const updated = profs.find(p => p.id === prev.id);
-          return updated || prev;
-        });
+        // Refresh the signed-in user's own record (identity always comes from the server session)
+        setCurrentProfile((prev) => (prev ? profs.find((p) => p.id === prev.id) || prev : prev));
       }
 
       if (branchList) {
@@ -95,21 +97,41 @@ export default function App() {
   };
 
   useEffect(() => {
+    fetchMe().then((me) => {
+      if (me) { setCurrentProfile(me); setViewMode(defaultViewFor(me)); if (me.role === 'trainer') setSelectedTrainerId(me.id); }
+      setAuthChecked(true);
+    });
+    const onAuthRequired = () => setCurrentProfile(null);
+    window.addEventListener(AUTH_REQUIRED_EVENT, onAuthRequired);
+    return () => window.removeEventListener(AUTH_REQUIRED_EVENT, onAuthRequired);
+  }, []);
+
+  const signedInId = currentProfile?.id;
+  const signedInRole = currentProfile?.role;
+  useEffect(() => {
+    if (!signedInId || signedInRole === 'member') { setIsLoading(false); return; }
     fetchData();
     const interval = setInterval(fetchData, 4000);
     return () => clearInterval(interval);
-  }, []);
+  }, [signedInId, signedInRole]);
 
-  // Handle Profile Switch (Owner / Manager / Trainer)
-  const handleProfileChange = (profile: Profile) => {
-    setCurrentProfile(profile);
-    if (profile.role === 'trainer') {
-      setViewMode('trainer');
-      setSelectedTrainerId(profile.id);
-    } else {
-      // Owner or Branch Manager
-      setViewMode('owner');
-    }
+  const handleLoggedIn = (p: Profile) => {
+    setCurrentProfile(p);
+    setViewMode(defaultViewFor(p));
+    if (p.role === 'trainer') setSelectedTrainerId(p.id);
+  };
+  const handleLogout = async () => {
+    await logout();
+    setCurrentProfile(null);
+    setProfiles([]);
+    setMembers([]);
+    setSelectedMemberDetail(null);
+  };
+  // Trainers may not open the owner portal (server enforces data access regardless)
+  const changeView = (mode: ViewMode) => {
+    if (mode === 'owner' && !isOwnerLike(currentProfile)) return;
+    if (mode === 'member_app') return;
+    setViewMode(mode);
   };
 
   // Onboard new client from ClientHandoverForm
@@ -220,7 +242,24 @@ export default function App() {
     };
   })();
 
-  if (isLoading || !currentProfile) {
+  if (!authChecked) {
+    return (
+      <div className="min-h-screen bg-zinc-950 text-white flex items-center justify-center">
+        <div className="w-10 h-10 border-4 border-red-600 border-t-transparent rounded-full animate-spin" aria-label="Loading"></div>
+      </div>
+    );
+  }
+  if (!currentProfile) return <LoginScreen onLoggedIn={handleLoggedIn} />;
+  if (currentProfile.role === 'member') {
+    return (
+      <div className="min-h-screen bg-zinc-950 text-zinc-100 font-sans antialiased">
+        <OfflineBanner />
+        <MemberAppView currentProfile={currentProfile} onLogout={handleLogout} />
+      </div>
+    );
+  }
+
+  if (isLoading) {
     return (
       <div className="min-h-screen bg-zinc-950 text-white flex items-center justify-center">
         <div className="flex flex-col items-center space-y-3">
@@ -239,17 +278,18 @@ export default function App() {
       {/* Top Header Navbar */}
       <Navbar
         viewMode={viewMode}
-        onViewModeChange={(mode) => setViewMode(mode)}
+        onViewModeChange={changeView}
+        onLogout={handleLogout}
+        onOpenPins={currentProfile.role === 'super_owner' ? () => setShowPinModal(true) : undefined}
+        onOpenBannerStudio={currentProfile.role === 'super_owner' || currentProfile.role === 'owner' ? () => setShowBannerStudio(true) : undefined}
         currentProfile={currentProfile}
         profiles={profiles}
         branches={branches}
         activeBranchId={activeBranchId}
         onSelectBranch={(bId) => setActiveBranchId(bId)}
-        onProfileChange={handleProfileChange}
         onOpenBranchManager={() => setShowBranchManager(true)}
         onResetSeed={handleResetSeed}
         onOpenExpoGuide={() => setShowExpoGuide(true)}
-        onOpenCodebaseViewer={() => setShowCodebaseViewer(true)}
         onOpenFreeLlmApi={() => setShowFreeLlmApiModal(true)}
         onOpenTrainerStudio={() => {
           setTrainerStudioTargetMember(null);
@@ -261,18 +301,13 @@ export default function App() {
 
       {/* Main Body View based on viewMode */}
       <main className="pb-16">
-        {viewMode === 'member_app' ? (
-          <MemberAppView
-            currentProfile={currentProfile}
-            onLogout={() => setViewMode(isOwnerRole ? 'owner' : 'trainer')}
-          />
-        ) : viewMode === 'client' ? (
+        {viewMode === 'client' ? (
           <ClientHandoverForm
             currentTrainer={activeTrainerProfile}
             onSubmitSuccess={handleClientSubmitSuccess}
             onExitHandoverMode={() => setViewMode(isOwnerRole ? 'owner' : 'trainer')}
           />
-        ) : viewMode === 'trainer' ? (
+        ) : viewMode === 'trainer' || !isOwnerRole ? (
           <TrainerDashboard
             currentTrainer={activeTrainerProfile}
             members={members}
@@ -316,6 +351,9 @@ export default function App() {
         )}
       </main>
 
+
+      {showPinModal && <PinManagementModal onClose={() => setShowPinModal(false)} />}
+      {showBannerStudio && <BannerStudioModal branches={branches} onClose={() => setShowBannerStudio(false)} />}
 
       {/* Multi-Branch Management Modal */}
       {showBranchManager && (
@@ -406,12 +444,6 @@ export default function App() {
           onClose={() => setShowExpoGuide(false)}
         />
       )}
-
-      {/* Complete Codebase Repository Viewer & PDF Hub Modal */}
-      <CodebaseViewerModal
-        isOpen={showCodebaseViewer}
-        onClose={() => setShowCodebaseViewer(false)}
-      />
 
       {/* FreeLLMAPI Central Gateway & Router Modal */}
       {showFreeLlmApiModal && (

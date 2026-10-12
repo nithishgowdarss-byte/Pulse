@@ -22,7 +22,7 @@ interface ProviderConfig {
 let providerConfigs: Record<LLMProviderId, ProviderConfig> = {
   gemini: {
     apiKey: process.env.GEMINI_API_KEY || '',
-    model: 'gemini-3.8-flash',
+    model: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
     enabled: true,
     priority: 1,
   },
@@ -89,7 +89,7 @@ export const PROVIDER_CATALOG: Record<
   gemini: {
     name: 'Google Gemini',
     badge: 'Official GenAI SDK',
-    models: ['gemini-3.8-flash', 'gemini-3.1-flash-lite', 'gemini-2.5-flash'],
+    models: ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-flash-latest'],
     freeTierDesc: '15 RPM / 1M TPM (Free Tier on Google AI Studio)',
     rpmLimit: 15,
     tpmLimit: 1000000,
@@ -157,6 +157,58 @@ const providerHealthCache: Record<
   github: { status: 'healthy', latencyMs: 290, lastTested: new Date().toISOString() },
 };
 
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  let t: NodeJS.Timeout;
+  return Promise.race([
+    p.finally(() => clearTimeout(t)),
+    new Promise<T>((_, reject) => { t = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms); }),
+  ]);
+}
+
+/**
+ * Local FreeLLMAPI gateway (OpenAI-compatible, default http://127.0.0.1:3001/v1).
+ * Used as the first fallback when Gemini is unavailable. Disable with FREELLMAPI_ENABLED=0.
+ */
+export function getLocalGatewayConfig() {
+  return {
+    enabled: process.env.FREELLMAPI_ENABLED !== '0',
+    baseUrl: (process.env.FREELLMAPI_BASE_URL || 'http://127.0.0.1:3001/v1').replace(/\/+$/, ''),
+    apiKey: process.env.FREELLMAPI_API_KEY || '',
+    model: process.env.FREELLMAPI_MODEL || 'auto',
+    timeoutMs: Number(process.env.FREELLMAPI_TIMEOUT_MS) || 30000,
+  };
+}
+
+export async function callLocalGateway(
+  messages: FreeLLMChatMessage[]
+): Promise<{ content: string; promptTokens: number; completionTokens: number; model: string }> {
+  const cfg = getLocalGatewayConfig();
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), cfg.timeoutMs);
+  try {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (cfg.apiKey) headers.Authorization = `Bearer ${cfg.apiKey}`;
+    const res = await fetch(`${cfg.baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ model: cfg.model, messages: messages.map((m) => ({ role: m.role, content: m.content })), temperature: 0.7, max_tokens: 1500 }),
+      signal: controller.signal,
+    });
+    if (!res.ok) throw new Error(`Local gateway HTTP ${res.status}`);
+    const data: any = await res.json();
+    const content = data?.choices?.[0]?.message?.content || '';
+    if (!content) throw new Error('Local gateway returned empty completion');
+    return {
+      content,
+      promptTokens: data?.usage?.prompt_tokens || Math.ceil(JSON.stringify(messages).length / 4),
+      completionTokens: data?.usage?.completion_tokens || Math.ceil(content.length / 4),
+      model: data?.model || cfg.model,
+    };
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 /**
  * Get the GoogleGenAI client (user-agent 'aistudio-build' is mandatory)
  */
@@ -189,8 +241,8 @@ async function callGemini(
     .map((m) => `${m.role.toUpperCase()}: ${m.content}`)
     .join('\n\n');
 
-  const response = await ai.models.generateContent({
-    model: modelName || 'gemini-3.8-flash',
+  const response = await withTimeout(ai.models.generateContent({
+    model: modelName || providerConfigs.gemini.model,
     contents: formattedPrompt,
     config: systemMsg
       ? {
@@ -200,7 +252,7 @@ async function callGemini(
       : {
           temperature: 0.7,
         },
-  });
+  }), Number(process.env.GEMINI_TIMEOUT_MS) || 15000, 'Gemini');
 
   const content = response.text || '';
   // Estimate tokens based on length (~4 chars per token)
@@ -376,11 +428,36 @@ export async function executeFreeLLMCompletion(
 
   let resultText = '';
   let providerUsed: LLMProviderId = 'gemini';
-  let modelUsed = preferredModel || 'gemini-3.8-flash';
+  let modelUsed = preferredModel || providerConfigs.gemini.model;
   let promptTokens = 0;
   let completionTokens = 0;
 
+  let gatewayTried = false;
   for (const providerId of providersInOrder) {
+    if (resultText) break;
+    // After the primary (Gemini) attempt, try the local FreeLLMAPI gateway once
+    if (providerId !== providersInOrder[0] && !gatewayTried) {
+      gatewayTried = true;
+      const gw = getLocalGatewayConfig();
+      if (gw.enabled) {
+        try {
+          const r = await callLocalGateway(messages);
+          resultText = r.content;
+          promptTokens = r.promptTokens;
+          completionTokens = r.completionTokens;
+          providerUsed = 'openrouter';
+          modelUsed = `freellmapi-local:${r.model}`;
+          break;
+        } catch (err: any) {
+          failoverHistory.push({
+            attemptedProvider: 'openrouter',
+            model: `freellmapi-local:${gw.model}`,
+            reason: String(err?.name === 'AbortError' ? 'Local gateway timeout' : err?.message || err).slice(0, 150),
+            timestamp: new Date().toISOString(),
+          });
+        }
+      }
+    }
     const config = providerConfigs[providerId];
     if (!config || !config.enabled) continue;
 
