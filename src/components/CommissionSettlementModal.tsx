@@ -87,7 +87,7 @@ export const CommissionSettlementModal: React.FC<CommissionSettlementModalProps>
           {/* Pending Overview */}
           <div className="bg-zinc-950 p-4 rounded-2xl border border-zinc-800 flex items-center justify-between">
             <div>
-              <span className="text-[10px] font-bold text-zinc-500 uppercase block">Calculated Pending Balance</span>
+              <span className="text-[10px] font-bold text-zinc-400 uppercase block">Calculated Pending Balance</span>
               <span className="text-xl font-black text-amber-400 font-mono">₹{pendingCommissionAmount}</span>
             </div>
             <span className="px-2.5 py-1 bg-amber-950 border border-amber-800 text-amber-400 text-[10px] font-bold rounded-lg uppercase">
@@ -101,7 +101,7 @@ export const CommissionSettlementModal: React.FC<CommissionSettlementModalProps>
               Settlement Amount to Pay (₹) <span className="text-red-400">*</span>
             </label>
             <div className="relative">
-              <span className="absolute left-3.5 top-2.5 text-zinc-500 font-bold text-sm">₹</span>
+              <span className="absolute left-3.5 top-2.5 text-zinc-400 font-bold text-sm">₹</span>
               <input
                 type="number"
                 required

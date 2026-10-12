@@ -63,6 +63,7 @@ import { createSqliteStore } from './src/server/sqliteStore';
 import { bodyValidator } from './src/server/validation';
 import { createVault, getSecretsKey, SealedSecret } from './src/server/secrets';
 import { issuePass, verifyPass } from './src/server/memberPass';
+import { registerRound3, round3EntityBranch, Round3Deps, Expense, RenewRequest, PrivacyRequest, Consent } from './src/server/round3';
 import {
   hashPin, verifyPin, isValidPinFormat, encodeSession, sessionCookie, clearSessionCookie,
   loginThrottle, createAuthMiddleware, getSessionSecret, Session, readSession,
@@ -180,6 +181,7 @@ app.use(
       const mb = (id?: string) => (id ? members.find((m) => m.id === id)?.branch_id : undefined);
       let m: RegExpMatchArray | null;
       if ((m = p.match(/^\/api\/freeze-requests\/([^/]+)$/))) { const r = freezeRequests.find((x) => x.id === m![1]); return r ? r.branch_id || mb(r.member_id) || '' : undefined; }
+      { const r3 = round3EntityBranch(round3Deps, p); if (r3 !== undefined) return r3; }
       if ((m = p.match(/^\/api\/pt-packages\/([^/]+)(\/.*)?$/))) { const r = ptPackages.find((x) => x.id === m![1]); return r ? r.branch_id : ''; }
       if ((m = p.match(/^\/api\/leads\/([^/]+)(\/convert)?$/))) { const r = leads.find((x) => x.id === m![1]); return r ? r.branch_id || '' : undefined; }
       if ((m = p.match(/^\/api\/retention\/alerts\/([^/]+)\/resolve$/))) { const r = retentionAlerts.find((x) => x.id === m![1]); return r ? r.branch_id || mb(r.member_id) || '' : undefined; }
@@ -444,6 +446,10 @@ interface PtPackage {
   purchased_at: string; expires_on?: string; notes?: string; sessions: PtSession[]; created_by: string;
 }
 let ptPackages: PtPackage[] = [];
+let expenses: Expense[] = [];
+let renewRequests: RenewRequest[] = [];
+let privacyRequests: PrivacyRequest[] = [];
+let consents: Record<string, Consent> = {};
 let balanceReminderSettings: Record<string, BalanceReminderSettings> = {
   'br_nag_1': {
     branch_id: 'br_nag_1',
@@ -2865,6 +2871,19 @@ app.delete('/api/pt-packages/:id/sessions/:sid', (req, res) => {
   if (pkg.sessions.length === before) return res.status(404).json({ error: 'Session not found' });
   res.json({ package: ptView(pkg) });
 });
+
+// ---------- Round 3: backup/restore, privacy, expenses, renew requests, reports ----------
+var round3Deps: Round3Deps = {
+  state: () => ({ expenses, renewRequests, privacyRequests, consents }),
+  members: () => members, profiles: () => profiles, branches: () => branches, payments: () => paymentHistory, attendance: () => attendanceLogs,
+  measurements: () => measurements, freezeRequests: () => freezeRequests, ptPackages: () => ptPackages, pinHashes: () => pinHashes,
+  audit: (e) => auditLogs.unshift({ id: `aud_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`, created_at: new Date().toISOString(), user_name: profiles.find(p => p.id === e.actor_id)?.full_name || members.find(m => m.id === e.actor_id)?.full_name || e.actor_id, ...e } as any),
+  gymDate: (ms?: number) => gymDate(ms),
+  get store() { return persistence; },
+  get dataDir() { return process.env.DATA_DIR || (isProduction() ? '/data' : path.join(process.cwd(), '.data')); },
+  markDirty: () => persistence?.markDirty(),
+} as any;
+registerRound3(app, round3Deps);
 
 // Staff Attendance REST Endpoints
 app.get('/api/staff-attendance', (req, res) => {
@@ -7074,6 +7093,10 @@ persistence = makeStore({
     banners,
     secretVault,
     ptPackages,
+    expenses,
+    renewRequests,
+    privacyRequests,
+    consents,
   }),
   restore: (data: any) => {
     if (data.branches !== undefined) branches = data.branches;
@@ -7110,6 +7133,10 @@ persistence = makeStore({
     if (data.banners !== undefined) banners = data.banners;
     if (data.secretVault !== undefined) secretVault = data.secretVault;
     if (Array.isArray(data.ptPackages)) ptPackages = data.ptPackages;
+    if (Array.isArray(data.expenses)) expenses = data.expenses;
+    if (Array.isArray(data.renewRequests)) renewRequests = data.renewRequests;
+    if (Array.isArray(data.privacyRequests)) privacyRequests = data.privacyRequests;
+    if (data.consents && typeof data.consents === 'object') consents = data.consents;
   },
 });
 persistence.load();

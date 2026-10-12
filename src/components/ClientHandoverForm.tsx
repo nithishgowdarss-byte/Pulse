@@ -202,7 +202,7 @@ export const ClientHandoverForm: React.FC<ClientHandoverFormProps> = ({
             Full Name <span className="text-red-500">*</span>
           </label>
           <div className="relative">
-            <User className="w-6 h-6 text-zinc-500 absolute left-4 top-1/2 -translate-y-1/2" />
+            <User className="w-6 h-6 text-zinc-400 absolute left-4 top-1/2 -translate-y-1/2" />
             <input
               type="text"
               placeholder="e.g. Rahul Sharma"
@@ -210,7 +210,7 @@ export const ClientHandoverForm: React.FC<ClientHandoverFormProps> = ({
               onChange={(e) => setFullName(e.target.value)}
               className={`w-full bg-zinc-950 text-white pl-13 pr-4 py-4 rounded-2xl border-2 ${
                 errors.fullName ? 'border-red-500 focus:ring-red-500' : 'border-zinc-800 focus:border-red-500'
-              } text-lg font-medium focus:outline-none transition-all placeholder:text-zinc-600`}
+              } text-lg font-medium focus:outline-none transition-all placeholder:text-zinc-400`}
             />
           </div>
           {errors.fullName && (
@@ -239,7 +239,7 @@ export const ClientHandoverForm: React.FC<ClientHandoverFormProps> = ({
               onChange={(e) => setPhone(e.target.value)}
               className={`w-full bg-zinc-950 text-white pl-28 pr-4 py-4 rounded-2xl border-2 ${
                 errors.phone ? 'border-red-500 focus:ring-red-500' : 'border-zinc-800 focus:border-red-500'
-              } text-lg font-mono font-medium focus:outline-none transition-all placeholder:text-zinc-600`}
+              } text-lg font-mono font-medium focus:outline-none transition-all placeholder:text-zinc-400`}
             />
           </div>
           {errors.phone ? (
@@ -248,7 +248,7 @@ export const ClientHandoverForm: React.FC<ClientHandoverFormProps> = ({
               <span>{errors.phone}</span>
             </p>
           ) : (
-            <p className="text-zinc-500 text-xs mt-1">10-digit Indian mobile number for gym updates & member pass</p>
+            <p className="text-zinc-400 text-xs mt-1">10-digit Indian mobile number for gym updates & member pass</p>
           )}
         </div>
 
@@ -258,10 +258,10 @@ export const ClientHandoverForm: React.FC<ClientHandoverFormProps> = ({
           {/* Age */}
           <div>
             <label className="block text-sm font-semibold text-zinc-300 mb-2">
-              Age <span className="text-zinc-500">(Optional)</span>
+              Age <span className="text-zinc-400">(Optional)</span>
             </label>
             <div className="relative">
-              <Calendar className="w-5 h-5 text-zinc-500 absolute left-4 top-1/2 -translate-y-1/2" />
+              <Calendar className="w-5 h-5 text-zinc-400 absolute left-4 top-1/2 -translate-y-1/2" />
               <input
                 type="number"
                 placeholder="e.g. 25"
@@ -269,7 +269,7 @@ export const ClientHandoverForm: React.FC<ClientHandoverFormProps> = ({
                 max={99}
                 value={age}
                 onChange={(e) => setAge(e.target.value)}
-                className="w-full bg-zinc-950 text-white pl-12 pr-4 py-3.5 rounded-2xl border-2 border-zinc-800 focus:border-red-500 text-base font-medium focus:outline-none transition-all placeholder:text-zinc-600"
+                className="w-full bg-zinc-950 text-white pl-12 pr-4 py-3.5 rounded-2xl border-2 border-zinc-800 focus:border-red-500 text-base font-medium focus:outline-none transition-all placeholder:text-zinc-400"
               />
             </div>
           </div>
@@ -277,7 +277,7 @@ export const ClientHandoverForm: React.FC<ClientHandoverFormProps> = ({
           {/* Gender */}
           <div>
             <label className="block text-sm font-semibold text-zinc-300 mb-2">
-              Gender <span className="text-zinc-500">(Optional)</span>
+              Gender <span className="text-zinc-400">(Optional)</span>
             </label>
             <select
               value={gender}
@@ -296,16 +296,16 @@ export const ClientHandoverForm: React.FC<ClientHandoverFormProps> = ({
         {/* Email */}
         <div>
           <label className="block text-sm font-semibold text-zinc-300 mb-2">
-            Email Address <span className="text-zinc-500">(Optional)</span>
+            Email Address <span className="text-zinc-400">(Optional)</span>
           </label>
           <div className="relative">
-            <Mail className="w-5 h-5 text-zinc-500 absolute left-4 top-1/2 -translate-y-1/2" />
+            <Mail className="w-5 h-5 text-zinc-400 absolute left-4 top-1/2 -translate-y-1/2" />
             <input
               type="email"
               placeholder="e.g. client@gmail.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full bg-zinc-950 text-white pl-12 pr-4 py-3.5 rounded-2xl border-2 border-zinc-800 focus:border-red-500 text-base font-medium focus:outline-none transition-all placeholder:text-zinc-600"
+              className="w-full bg-zinc-950 text-white pl-12 pr-4 py-3.5 rounded-2xl border-2 border-zinc-800 focus:border-red-500 text-base font-medium focus:outline-none transition-all placeholder:text-zinc-400"
             />
           </div>
         </div>
@@ -313,16 +313,16 @@ export const ClientHandoverForm: React.FC<ClientHandoverFormProps> = ({
         {/* Emergency Contact */}
         <div>
           <label className="block text-sm font-semibold text-zinc-300 mb-2">
-            Emergency Contact Number <span className="text-zinc-500">(Optional)</span>
+            Emergency Contact Number <span className="text-zinc-400">(Optional)</span>
           </label>
           <div className="relative">
-            <HeartHandshake className="w-5 h-5 text-zinc-500 absolute left-4 top-1/2 -translate-y-1/2" />
+            <HeartHandshake className="w-5 h-5 text-zinc-400 absolute left-4 top-1/2 -translate-y-1/2" />
             <input
               type="text"
               placeholder="Family / Friend contact & relationship"
               value={emergencyContact}
               onChange={(e) => setEmergencyContact(e.target.value)}
-              className="w-full bg-zinc-950 text-white pl-12 pr-4 py-3.5 rounded-2xl border-2 border-zinc-800 focus:border-red-500 text-base font-medium focus:outline-none transition-all placeholder:text-zinc-600"
+              className="w-full bg-zinc-950 text-white pl-12 pr-4 py-3.5 rounded-2xl border-2 border-zinc-800 focus:border-red-500 text-base font-medium focus:outline-none transition-all placeholder:text-zinc-400"
             />
           </div>
         </div>
@@ -330,14 +330,14 @@ export const ClientHandoverForm: React.FC<ClientHandoverFormProps> = ({
         {/* Notes */}
         <div>
           <label className="block text-sm font-semibold text-zinc-300 mb-2">
-            Fitness Goals / Health Notes <span className="text-zinc-500">(Optional)</span>
+            Fitness Goals / Health Notes <span className="text-zinc-400">(Optional)</span>
           </label>
           <textarea
             rows={2}
             placeholder="e.g. Weight loss, posture improvement, past injuries..."
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
-            className="w-full bg-zinc-950 text-white p-4 rounded-2xl border-2 border-zinc-800 focus:border-red-500 text-base font-medium focus:outline-none transition-all placeholder:text-zinc-600"
+            className="w-full bg-zinc-950 text-white p-4 rounded-2xl border-2 border-zinc-800 focus:border-red-500 text-base font-medium focus:outline-none transition-all placeholder:text-zinc-400"
           ></textarea>
         </div>
 

@@ -15,7 +15,7 @@ import {
   Sparkles,
   FileDown,
 } from 'lucide-react';
-import { KeyRound, LogOut, ImagePlus, ScanLine } from 'lucide-react';
+import { KeyRound, LogOut, ImagePlus, ScanLine, BarChart3 } from 'lucide-react';
 import { UserRole, Profile, Branch } from '../types';
 import { useStaffNotifications } from '../hooks/useStaffNotifications';
 
@@ -33,6 +33,7 @@ interface NavbarProps {
   onOpenPins?: () => void;
   onOpenBannerStudio?: () => void;
   onOpenDesk?: () => void;
+  onOpenOps?: () => void;
   onOpenBranchManager: () => void;
   onResetSeed: () => void;
   onOpenExpoGuide: () => void;
@@ -55,6 +56,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenPins,
   onOpenBannerStudio,
   onOpenDesk,
+  onOpenOps,
   onOpenBranchManager,
   onResetSeed,
   onOpenExpoGuide,
@@ -122,7 +124,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   <button
                     onClick={onOpenBranchManager}
                     title="Manage Branch Details & Settings"
-                    className="p-1 rounded-lg text-zinc-500 hover:text-indigo-300 hover:bg-zinc-800 transition-colors"
+                    className="p-1 rounded-lg text-zinc-400 hover:text-indigo-300 hover:bg-zinc-800 transition-colors"
                   >
                     <Building2 className="w-3.5 h-3.5" />
                   </button>
@@ -216,7 +218,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
                   <div className="max-h-64 overflow-y-auto space-y-2 pr-1">
                     {notifications.length === 0 ? (
-                      <p className="text-xs text-zinc-500 text-center py-4">No notifications yet</p>
+                      <p className="text-xs text-zinc-400 text-center py-4">No notifications yet</p>
                     ) : (
                       notifications.map((n) => (
                         <div
@@ -230,7 +232,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                         >
                           <div className="flex items-center justify-between">
                             <span className="font-bold text-white text-xs">{n.title}</span>
-                            <span className="text-[10px] text-zinc-500">
+                            <span className="text-[10px] text-zinc-400">
                               {new Date(n.created_at).toLocaleTimeString('en-IN', {
                                 hour: '2-digit',
                                 minute: '2-digit',
@@ -251,6 +253,14 @@ export const Navbar: React.FC<NavbarProps> = ({
                 className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 text-white text-xs font-black shadow-md">
                 <ScanLine className="w-3.5 h-3.5" />
                 <span className="hidden sm:inline">Desk</span>
+              </button>
+            )}
+
+            {onOpenOps && (
+              <button onClick={onOpenOps} title="Business: reports, expenses, renewal and privacy requests, backups" aria-label="Business"
+                className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-sky-700 text-white text-xs font-black shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300">
+                <BarChart3 className="w-3.5 h-3.5" aria-hidden="true" />
+                <span className="hidden sm:inline">Business</span>
               </button>
             )}
 

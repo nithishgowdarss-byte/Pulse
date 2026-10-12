@@ -117,7 +117,7 @@ export const MemberDetailModal: React.FC<MemberDetailModalProps> = ({
               {/* Status & Expiry Intelligence Box */}
               <div className="bg-zinc-950 p-4 rounded-2xl border border-zinc-800 flex items-center justify-between">
                 <div>
-                  <span className="text-[10px] font-bold text-zinc-500 uppercase block">Membership Status</span>
+                  <span className="text-[10px] font-bold text-zinc-400 uppercase block">Membership Status</span>
                   <span className={`px-2.5 py-0.5 rounded-full text-xs font-black uppercase border inline-block mt-1 ${
                     member.status === 'active'
                       ? 'bg-emerald-950 text-emerald-400 border-emerald-800'
@@ -130,7 +130,7 @@ export const MemberDetailModal: React.FC<MemberDetailModalProps> = ({
                 </div>
 
                 <div className="text-right">
-                  <span className="text-[10px] font-bold text-zinc-500 uppercase block">Days Remaining</span>
+                  <span className="text-[10px] font-bold text-zinc-400 uppercase block">Days Remaining</span>
                   <span className={`font-mono font-black text-lg block mt-0.5 ${
                     daysRemaining < 0
                       ? 'text-red-400'
@@ -160,12 +160,12 @@ export const MemberDetailModal: React.FC<MemberDetailModalProps> = ({
 
                 <div className="bg-zinc-950 p-4 rounded-2xl border border-zinc-800 grid grid-cols-2 gap-3 text-sm">
                   <div>
-                    <span className="text-zinc-500 text-xs block">Amount Paid:</span>
+                    <span className="text-zinc-400 text-xs block">Amount Paid:</span>
                     <span className="font-mono font-bold text-emerald-400 text-base">₹{member.amount_paid || 0}</span>
                   </div>
 
                   <div>
-                    <span className="text-zinc-500 text-xs block">Balance Due:</span>
+                    <span className="text-zinc-400 text-xs block">Balance Due:</span>
                     <span className={`font-mono font-bold text-base ${
                       member.balance_due && member.balance_due > 0 ? 'text-amber-400' : 'text-zinc-400'
                     }`}>
@@ -175,7 +175,7 @@ export const MemberDetailModal: React.FC<MemberDetailModalProps> = ({
 
                   {member.payment_reference && (
                     <div className="col-span-2 pt-2 border-t border-zinc-900 flex justify-between text-xs">
-                      <span className="text-zinc-500">UPI / Payment Ref:</span>
+                      <span className="text-zinc-400">UPI / Payment Ref:</span>
                       <span className="font-mono text-zinc-300 font-medium">{member.payment_reference}</span>
                     </div>
                   )}
@@ -206,18 +206,18 @@ export const MemberDetailModal: React.FC<MemberDetailModalProps> = ({
                   {member.mandate_id ? (
                     <>
                       <div className="flex justify-between">
-                        <span className="text-zinc-500">Mandate UMN:</span>
+                        <span className="text-zinc-400">Mandate UMN:</span>
                         <span className="font-mono text-zinc-300">{member.mandate_id}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-zinc-500">Max Auto-Debit Cap:</span>
+                        <span className="text-zinc-400">Max Auto-Debit Cap:</span>
                         <span className="font-mono text-emerald-400 font-bold">
                           ₹{member.mandate_max_amount ? member.mandate_max_amount.toLocaleString() : '15,000'}/mo
                         </span>
                       </div>
                     </>
                   ) : (
-                    <p className="text-[11px] text-zinc-500">
+                    <p className="text-[11px] text-zinc-400">
                       No recurring e-mandate registered for automatic renewals.
                     </p>
                   )}
@@ -230,7 +230,7 @@ export const MemberDetailModal: React.FC<MemberDetailModalProps> = ({
                 
                 <div className="bg-zinc-950 p-4 rounded-2xl border border-zinc-800 space-y-3 text-zinc-300">
                   <div className="flex justify-between items-center pb-2 border-b border-zinc-900">
-                    <span className="text-zinc-500 flex items-center space-x-1">
+                    <span className="text-zinc-400 flex items-center space-x-1">
                       <Phone className="w-3.5 h-3.5 text-red-500" />
                       <span>Phone:</span>
                     </span>
@@ -239,7 +239,7 @@ export const MemberDetailModal: React.FC<MemberDetailModalProps> = ({
 
                   {member.email && (
                     <div className="flex justify-between items-center pb-2 border-b border-zinc-900">
-                      <span className="text-zinc-500 flex items-center space-x-1">
+                      <span className="text-zinc-400 flex items-center space-x-1">
                         <Mail className="w-3.5 h-3.5 text-zinc-400" />
                         <span>Email:</span>
                       </span>
@@ -248,17 +248,17 @@ export const MemberDetailModal: React.FC<MemberDetailModalProps> = ({
                   )}
 
                   <div className="flex justify-between items-center pb-2 border-b border-zinc-900">
-                    <span className="text-zinc-500">Home Branch:</span>
+                    <span className="text-zinc-400">Home Branch:</span>
                     <span className="font-bold text-indigo-400">{member.branch_name || 'Main HQ'}</span>
                   </div>
 
                   <div className="flex justify-between items-center pb-2 border-b border-zinc-900">
-                    <span className="text-zinc-500">Package Type:</span>
+                    <span className="text-zinc-400">Package Type:</span>
                     <span className="font-bold text-white">{member.package_type || 'General Gym'}</span>
                   </div>
 
                   <div className="flex justify-between items-center">
-                    <span className="text-zinc-500">Assigned Trainer:</span>
+                    <span className="text-zinc-400">Assigned Trainer:</span>
                     <span className="font-bold text-amber-300">{member.trainer_name}</span>
                   </div>
                 </div>
@@ -325,16 +325,16 @@ export const MemberDetailModal: React.FC<MemberDetailModalProps> = ({
                 <div>
                   <h3 className="text-lg font-black text-white">{member.full_name}</h3>
                   <p className="text-xs text-red-400 font-mono">ID: {member.id}</p>
-                  <p className="text-[10px] text-zinc-500 font-mono mt-1">Pulse Fitness Digital Access Pass</p>
+                  <p className="text-[10px] text-zinc-400 font-mono mt-1">Pulse Fitness Digital Access Pass</p>
                 </div>
 
                 <div className="bg-zinc-950 p-3 rounded-xl border border-zinc-800 text-left text-xs space-y-1">
                   <div className="flex justify-between">
-                    <span className="text-zinc-500">Package:</span>
+                    <span className="text-zinc-400">Package:</span>
                     <span className="font-bold text-white">{member.package_type || 'General Gym'}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-zinc-500">Valid Till:</span>
+                    <span className="text-zinc-400">Valid Till:</span>
                     <span className="font-bold text-emerald-400 font-mono">{member.end_date || 'Pending'}</span>
                   </div>
                 </div>
@@ -353,7 +353,7 @@ export const MemberDetailModal: React.FC<MemberDetailModalProps> = ({
 
               <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
                 {paymentList.length === 0 ? (
-                  <div className="p-8 text-center text-zinc-500 text-xs">No individual payment records logged yet.</div>
+                  <div className="p-8 text-center text-zinc-400 text-xs">No individual payment records logged yet.</div>
                 ) : (
                   paymentList.map((pay) => (
                     <div key={pay.id} className="p-3 bg-zinc-950 border border-zinc-800 rounded-xl space-y-1 text-xs">
@@ -366,7 +366,7 @@ export const MemberDetailModal: React.FC<MemberDetailModalProps> = ({
                         <span>By: {pay.received_by_name}</span>
                       </div>
                       {pay.notes && (
-                        <p className="text-[10px] text-zinc-500 italic border-t border-zinc-900 pt-1 mt-1">
+                        <p className="text-[10px] text-zinc-400 italic border-t border-zinc-900 pt-1 mt-1">
                           "{pay.notes}"
                         </p>
                       )}

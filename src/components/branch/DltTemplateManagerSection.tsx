@@ -222,9 +222,9 @@ export const DltTemplateManagerSection: React.FC<DltTemplateManagerSectionProps>
       <div className="space-y-3">
         {filteredTemplates.length === 0 ? (
           <div className="p-6 bg-zinc-900/40 border border-zinc-800 rounded-xl text-center space-y-2">
-            <Tag className="w-6 h-6 text-zinc-600 mx-auto" />
+            <Tag className="w-6 h-6 text-zinc-400 mx-auto" />
             <div className="text-xs text-zinc-400 font-bold">No DLT templates registered for this filter</div>
-            <div className="text-[10px] text-zinc-500">
+            <div className="text-[10px] text-zinc-400">
               Click &quot;Add Template&quot; to link your approved MSG91 flow IDs.
             </div>
           </div>
@@ -289,7 +289,7 @@ export const DltTemplateManagerSection: React.FC<DltTemplateManagerSectionProps>
                       </>
                     ) : (
                       <>
-                        <XCircle className="w-3 h-3 text-zinc-500" />
+                        <XCircle className="w-3 h-3 text-zinc-400" />
                         <span>Inactive</span>
                       </>
                     )}
@@ -307,7 +307,7 @@ export const DltTemplateManagerSection: React.FC<DltTemplateManagerSectionProps>
               {/* Variable Schema Chips */}
               {tpl.variable_schema && tpl.variable_schema.length > 0 && (
                 <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
-                  <span className="text-[9px] uppercase font-bold text-zinc-500 flex items-center gap-1">
+                  <span className="text-[9px] uppercase font-bold text-zinc-400 flex items-center gap-1">
                     <Code className="w-3 h-3" />
                     <span>Schema:</span>
                   </span>
@@ -316,7 +316,7 @@ export const DltTemplateManagerSection: React.FC<DltTemplateManagerSectionProps>
                       key={i}
                       className="px-2 py-0.5 bg-zinc-800 text-zinc-300 border border-zinc-700 rounded-md text-[10px] font-mono"
                     >
-                      {v.key} <span className="text-zinc-500">&rarr;</span> {v.label}
+                      {v.key} <span className="text-zinc-400">&rarr;</span> {v.label}
                     </span>
                   ))}
                 </div>
@@ -336,7 +336,7 @@ export const DltTemplateManagerSection: React.FC<DltTemplateManagerSectionProps>
             </h6>
             <button
               onClick={() => setShowAddModal(false)}
-              className="text-zinc-500 hover:text-zinc-300 text-xs"
+              className="text-zinc-400 hover:text-zinc-300 text-xs"
             >
               ✕
             </button>
@@ -454,7 +454,7 @@ export const DltTemplateManagerSection: React.FC<DltTemplateManagerSectionProps>
                       }}
                       className="w-24 bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1 text-xs text-white font-mono"
                     />
-                    <span className="text-zinc-500">&rarr;</span>
+                    <span className="text-zinc-400">&rarr;</span>
                     <input
                       type="text"
                       placeholder="first_name | end_date | discount"
@@ -470,7 +470,7 @@ export const DltTemplateManagerSection: React.FC<DltTemplateManagerSectionProps>
                       <button
                         type="button"
                         onClick={() => handleRemoveVariable(i)}
-                        className="text-zinc-500 hover:text-rose-400 px-1 text-xs"
+                        className="text-zinc-400 hover:text-rose-400 px-1 text-xs"
                       >
                         ✕
                       </button>
@@ -493,7 +493,7 @@ export const DltTemplateManagerSection: React.FC<DltTemplateManagerSectionProps>
                 disabled={isSaving || !formData.name || !formData.msg91_template_id}
                 className={`px-4 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all shadow-md ${
                   isSaving || !formData.name || !formData.msg91_template_id
-                    ? 'bg-zinc-800 text-zinc-500 cursor-not-allowed'
+                    ? 'bg-zinc-800 text-zinc-400 cursor-not-allowed'
                     : 'bg-indigo-600 hover:bg-indigo-500 text-white'
                 }`}
               >

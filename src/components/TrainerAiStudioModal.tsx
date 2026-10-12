@@ -338,7 +338,7 @@ export const TrainerAiStudioModal: React.FC<TrainerAiStudioModalProps> = ({
                         <span>•</span>
                         <span>{workoutPlan.difficulty}</span>
                         <span>•</span>
-                        <span className="text-zinc-500 font-mono">Via FreeLLMAPI ({workoutPlan.modelUsed})</span>
+                        <span className="text-zinc-400 font-mono">Via FreeLLMAPI ({workoutPlan.modelUsed})</span>
                       </div>
                     </div>
 
@@ -378,7 +378,7 @@ export const TrainerAiStudioModal: React.FC<TrainerAiStudioModalProps> = ({
                         {/* Warmup */}
                         {dayItem.warmup && dayItem.warmup.length > 0 && (
                           <div className="text-[11px] text-zinc-400 flex items-center gap-1.5 flex-wrap">
-                            <span className="text-zinc-500 font-bold">Warmup:</span>
+                            <span className="text-zinc-400 font-bold">Warmup:</span>
                             {dayItem.warmup.map((w, wIdx) => (
                               <span key={wIdx} className="px-1.5 py-0.5 rounded bg-zinc-900 text-zinc-300">
                                 {w}
@@ -400,14 +400,14 @@ export const TrainerAiStudioModal: React.FC<TrainerAiStudioModalProps> = ({
                                 </span>
                                 <span className="font-bold text-white">{ex.name}</span>
                                 {ex.notes && (
-                                  <span className="text-[10px] text-zinc-500 italic hidden sm:inline">
+                                  <span className="text-[10px] text-zinc-400 italic hidden sm:inline">
                                     ({ex.notes})
                                   </span>
                                 )}
                               </div>
                               <div className="font-mono text-zinc-300 text-right">
                                 <span className="font-bold text-orange-300">{ex.sets} sets</span> × {ex.reps}{' '}
-                                <span className="text-zinc-500 text-[10px]">({ex.rpeOrRest})</span>
+                                <span className="text-zinc-400 text-[10px]">({ex.rpeOrRest})</span>
                               </div>
                             </div>
                           ))}
@@ -515,7 +515,7 @@ export const TrainerAiStudioModal: React.FC<TrainerAiStudioModalProps> = ({
                       <div className="flex items-center space-x-2 text-zinc-400 text-xs mt-0.5">
                         <span className="text-emerald-400 font-bold">{dietPlan.dietaryPreference}</span>
                         <span>•</span>
-                        <span className="text-zinc-500 font-mono">Via FreeLLMAPI ({dietPlan.modelUsed})</span>
+                        <span className="text-zinc-400 font-mono">Via FreeLLMAPI ({dietPlan.modelUsed})</span>
                       </div>
                     </div>
 
@@ -544,24 +544,24 @@ export const TrainerAiStudioModal: React.FC<TrainerAiStudioModalProps> = ({
                   {/* Target Macros Grid */}
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
                     <div className="p-2.5 rounded-xl bg-zinc-950 border border-zinc-800 text-center">
-                      <div className="text-[10px] text-zinc-500 font-bold uppercase">Calories</div>
+                      <div className="text-[10px] text-zinc-400 font-bold uppercase">Calories</div>
                       <div className="text-sm font-black text-white font-mono">{dietPlan.targetCalories} kcal</div>
                     </div>
 
                     <div className="p-2.5 rounded-xl bg-zinc-950 border border-zinc-800 text-center">
-                      <div className="text-[10px] text-zinc-500 font-bold uppercase">Protein Target</div>
+                      <div className="text-[10px] text-zinc-400 font-bold uppercase">Protein Target</div>
                       <div className="text-sm font-black text-emerald-400 font-mono">{dietPlan.proteinGrams}g / day</div>
                     </div>
 
                     <div className="p-2.5 rounded-xl bg-zinc-950 border border-zinc-800 text-center">
-                      <div className="text-[10px] text-zinc-500 font-bold uppercase">Carbs &amp; Fats</div>
+                      <div className="text-[10px] text-zinc-400 font-bold uppercase">Carbs &amp; Fats</div>
                       <div className="text-sm font-black text-amber-400 font-mono">
                         {dietPlan.carbsGrams}g C / {dietPlan.fatsGrams}g F
                       </div>
                     </div>
 
                     <div className="p-2.5 rounded-xl bg-zinc-950 border border-zinc-800 text-center">
-                      <div className="text-[10px] text-zinc-500 font-bold uppercase">Water Intake</div>
+                      <div className="text-[10px] text-zinc-400 font-bold uppercase">Water Intake</div>
                       <div className="text-sm font-black text-cyan-400 font-mono">
                         {dietPlan.hydrationGoalLitres} Litres
                       </div>
@@ -614,7 +614,7 @@ export const TrainerAiStudioModal: React.FC<TrainerAiStudioModalProps> = ({
 
         {/* Footer */}
         <div className="px-5 py-3 border-t border-zinc-800 bg-zinc-900/60 flex items-center justify-between text-xs">
-          <span className="text-zinc-500">
+          <span className="text-zinc-400">
             Plans are logged into member CRM timeline for trainer audit truth.
           </span>
           <button

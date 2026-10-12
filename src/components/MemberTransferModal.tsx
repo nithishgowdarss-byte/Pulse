@@ -91,7 +91,7 @@ export const MemberTransferModal: React.FC<MemberTransferModalProps> = ({
 
           {/* Member Card Summary */}
           <div className="bg-zinc-950 p-4 rounded-2xl border border-zinc-800 space-y-1">
-            <span className="text-[10px] font-extrabold text-zinc-500 uppercase block">Selected Member</span>
+            <span className="text-[10px] font-extrabold text-zinc-400 uppercase block">Selected Member</span>
             <div className="flex items-center justify-between">
               <h4 className="text-sm font-black text-white">{member.full_name}</h4>
               <span className="px-2 py-0.5 bg-orange-950 text-orange-400 font-extrabold text-[10px] rounded uppercase border border-orange-800">
@@ -104,7 +104,7 @@ export const MemberTransferModal: React.FC<MemberTransferModalProps> = ({
           {/* Transfer Visual Pipeline */}
           <div className="grid grid-cols-2 gap-3 text-center">
             <div className="bg-zinc-950 p-3 rounded-2xl border border-zinc-800">
-              <span className="text-[10px] font-bold text-zinc-500 uppercase block mb-1">From Branch</span>
+              <span className="text-[10px] font-bold text-zinc-400 uppercase block mb-1">From Branch</span>
               <span className="text-xs font-bold text-zinc-300 block truncate">{currentBranch.name}</span>
             </div>
 

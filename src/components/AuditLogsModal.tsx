@@ -82,12 +82,12 @@ export const AuditLogsModal: React.FC<AuditLogsModalProps> = ({ currentProfile, 
                     <span className="px-2 py-0.5 bg-indigo-950 text-indigo-300 font-mono font-black text-[10px] rounded uppercase border border-indigo-800">
                       {log.action}
                     </span>
-                    <span className="text-[10px] font-mono text-zinc-500">{new Date(log.created_at).toLocaleString()}</span>
+                    <span className="text-[10px] font-mono text-zinc-400">{new Date(log.created_at).toLocaleString()}</span>
                   </div>
 
                   <div className="flex justify-between text-zinc-300 pt-1">
                     <span>By: <strong className="text-white">{log.user_name}</strong> ({log.user_role})</span>
-                    <span className="text-zinc-500 font-mono text-[10px]">Entity: {log.entity_type} #{log.entity_id}</span>
+                    <span className="text-zinc-400 font-mono text-[10px]">Entity: {log.entity_type} #{log.entity_id}</span>
                   </div>
 
                   {(log.old_value || log.new_value) && (

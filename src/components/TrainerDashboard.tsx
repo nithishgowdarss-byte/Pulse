@@ -196,13 +196,13 @@ export const TrainerDashboard: React.FC<TrainerDashboardProps> = ({
         <div className="bg-zinc-900 border border-zinc-800 p-5 rounded-3xl shadow-xl">
           <span className="text-[10px] font-bold text-zinc-400 uppercase block">My Active Clients</span>
           <div className="text-2xl sm:text-3xl font-black font-mono text-white mt-1">{activeMembers.length}</div>
-          <span className="text-[11px] text-zinc-500 block mt-1">Out of {myMembers.length} total</span>
+          <span className="text-[11px] text-zinc-400 block mt-1">Out of {myMembers.length} total</span>
         </div>
 
         <div className="bg-zinc-900 border border-zinc-800 p-5 rounded-3xl shadow-xl">
           <span className="text-[10px] font-bold text-zinc-400 uppercase block">Pending Activations</span>
           <div className="text-2xl sm:text-3xl font-black font-mono text-amber-400 mt-1">{pendingMembers.length}</div>
-          <span className="text-[11px] text-zinc-500 block mt-1">Awaiting plan confirmation</span>
+          <span className="text-[11px] text-zinc-400 block mt-1">Awaiting plan confirmation</span>
         </div>
 
         <button
@@ -279,7 +279,7 @@ export const TrainerDashboard: React.FC<TrainerDashboardProps> = ({
             </h3>
 
             <div className="relative w-64">
-              <Search className="w-4 h-4 text-zinc-500 absolute left-3 top-2.5" />
+              <Search className="w-4 h-4 text-zinc-400 absolute left-3 top-2.5" />
               <input
                 type="text"
                 placeholder="Search..."
@@ -394,17 +394,17 @@ export const TrainerDashboard: React.FC<TrainerDashboardProps> = ({
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div className="bg-zinc-950 p-4 rounded-2xl border border-zinc-800">
-                <span className="text-[10px] font-bold text-zinc-500 uppercase block">Total Earned</span>
+                <span className="text-[10px] font-bold text-zinc-400 uppercase block">Total Earned</span>
                 <span className="text-2xl font-black font-mono text-amber-400">₹{commissionStats.totalCommissionEarned.toLocaleString()}</span>
               </div>
 
               <div className="bg-zinc-950 p-4 rounded-2xl border border-zinc-800">
-                <span className="text-[10px] font-bold text-zinc-500 uppercase block">Paid Out by Owner</span>
+                <span className="text-[10px] font-bold text-zinc-400 uppercase block">Paid Out by Owner</span>
                 <span className="text-2xl font-black font-mono text-emerald-400">₹{commissionStats.totalCommissionPaid.toLocaleString()}</span>
               </div>
 
               <div className="bg-zinc-950 p-4 rounded-2xl border border-zinc-800">
-                <span className="text-[10px] font-bold text-zinc-500 uppercase block">Pending Settlement Balance</span>
+                <span className="text-[10px] font-bold text-zinc-400 uppercase block">Pending Settlement Balance</span>
                 <span className="text-2xl font-black font-mono text-red-400">₹{commissionStats.totalCommissionPending.toLocaleString()}</span>
               </div>
             </div>
@@ -413,13 +413,13 @@ export const TrainerDashboard: React.FC<TrainerDashboardProps> = ({
               <h4 className="text-xs font-bold text-zinc-400 uppercase">Settlement History</h4>
               <div className="space-y-2">
                 {commissionStats.settlementHistory.length === 0 ? (
-                  <p className="text-xs text-zinc-500 italic p-4 bg-zinc-950 rounded-xl border border-zinc-800">No payouts logged yet.</p>
+                  <p className="text-xs text-zinc-400 italic p-4 bg-zinc-950 rounded-xl border border-zinc-800">No payouts logged yet.</p>
                 ) : (
                   commissionStats.settlementHistory.map((s) => (
                     <div key={s.id} className="p-3 bg-zinc-950 rounded-xl border border-zinc-800 flex justify-between items-center text-xs">
                       <div>
                         <span className="font-bold text-white block">Commission Payout: ₹{(s.amount || s.total_commission || 0).toLocaleString('en-IN')}</span>
-                        <span className="text-[10px] text-zinc-500">{s.notes}</span>
+                        <span className="text-[10px] text-zinc-400">{s.notes}</span>
                       </div>
                       <span className="text-emerald-400 font-bold uppercase">{s.status}</span>
                     </div>

@@ -244,7 +244,7 @@ export const OwnerAiBroadcastModal: React.FC<OwnerAiBroadcastModalProps> = ({
 
         {/* Footer */}
         <div className="px-5 py-3 border-t border-zinc-800 bg-zinc-900/60 flex items-center justify-between text-xs">
-          <span className="text-zinc-500">
+          <span className="text-zinc-400">
             Powered by FreeLLMAPI smart router cascade • Zero API bills.
           </span>
           <button

@@ -377,7 +377,7 @@ export const SingleDayEntryForm: React.FC<SingleDayEntryFormProps> = ({ branchId
                 <span className="text-red-500">*</span>
               </label>
               <div className="relative">
-                <span className="absolute left-3 top-2 text-zinc-500 font-bold">₹</span>
+                <span className="absolute left-3 top-2 text-zinc-400 font-bold">₹</span>
                 <input
                   type="number"
                   inputMode="decimal"
@@ -417,7 +417,7 @@ export const SingleDayEntryForm: React.FC<SingleDayEntryFormProps> = ({ branchId
             </div>
           ) : !phoneOk ? (
             <div className="flex items-center space-x-2 text-zinc-400">
-              <AlertCircle className="w-4 h-4 text-zinc-500 flex-shrink-0" />
+              <AlertCircle className="w-4 h-4 text-zinc-400 flex-shrink-0" />
               <span>Enter 10-digit registered mobile number to verify annual plan freeze eligibility.</span>
             </div>
           ) : freezeEligibility.checked && freezeEligibility.data?.eligible ? (

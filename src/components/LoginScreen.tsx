@@ -33,7 +33,7 @@ export const LoginScreen: React.FC<{ onLoggedIn: (p: Profile) => void }> = ({ on
         <label className="block space-y-1.5">
           <span className="text-[11px] font-bold uppercase tracking-wider text-zinc-400">Phone number</span>
           <div className="flex items-center bg-zinc-950 border border-zinc-700 focus-within:border-red-500 rounded-xl px-3">
-            <Phone className="w-4 h-4 text-zinc-500" />
+            <Phone className="w-4 h-4 text-zinc-400" />
             <input
               name="phone" type="tel" inputMode="numeric" autoComplete="username" required
               value={phone} onChange={(e) => setPhone(e.target.value.replace(/[^\d+ ]/g, ''))}
@@ -45,7 +45,7 @@ export const LoginScreen: React.FC<{ onLoggedIn: (p: Profile) => void }> = ({ on
         <label className="block space-y-1.5">
           <span className="text-[11px] font-bold uppercase tracking-wider text-zinc-400">PIN</span>
           <div className="flex items-center bg-zinc-950 border border-zinc-700 focus-within:border-red-500 rounded-xl px-3">
-            <Lock className="w-4 h-4 text-zinc-500" />
+            <Lock className="w-4 h-4 text-zinc-400" />
             <input
               name="pin" type="password" inputMode="numeric" autoComplete="current-password" required
               pattern="\d{4,8}" maxLength={8} value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
@@ -60,7 +60,7 @@ export const LoginScreen: React.FC<{ onLoggedIn: (p: Profile) => void }> = ({ on
           className="w-full py-3 rounded-xl bg-red-600 hover:bg-red-500 disabled:opacity-60 font-black uppercase tracking-wide text-sm transition-all">
           {busy ? 'Signing in…' : 'Sign in'}
         </button>
-        <p className="text-[11px] text-center text-zinc-500">Forgot your PIN? Ask the gym owner to reset it.</p>
+        <p className="text-[11px] text-center text-zinc-400">Forgot your PIN? Ask the gym owner to reset it.</p>
       </form>
     </div>
   );

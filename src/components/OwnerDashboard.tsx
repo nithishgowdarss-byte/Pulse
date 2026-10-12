@@ -412,7 +412,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
             {/* Search Bar & Quick Export */}
             <div className="flex items-center gap-2 w-full sm:w-auto">
               <div className="relative flex-1 sm:w-72">
-                <Search className="w-4 h-4 text-zinc-500 absolute left-3.5 top-3" />
+                <Search className="w-4 h-4 text-zinc-400 absolute left-3.5 top-3" />
                 <input
                   type="text"
                   placeholder="Search member name or phone..."

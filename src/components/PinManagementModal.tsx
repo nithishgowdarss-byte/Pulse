@@ -46,7 +46,7 @@ export const PinManagementModal: React.FC<{ onClose: () => void }> = ({ onClose 
             <li key={u.id} className="flex flex-wrap items-center gap-2 px-4 py-3 text-sm">
               <div className="flex-1 min-w-[10rem]">
                 <div className="font-bold text-white">{u.name}</div>
-                <div className="text-[11px] text-zinc-500">{u.role.replace('_', ' ')} · {u.phone} · {u.has_pin ? 'PIN set' : 'no PIN'}</div>
+                <div className="text-[11px] text-zinc-400">{u.role.replace('_', ' ')} · {u.phone} · {u.has_pin ? 'PIN set' : 'no PIN'}</div>
               </div>
               {editing === u.id ? (
                 <>

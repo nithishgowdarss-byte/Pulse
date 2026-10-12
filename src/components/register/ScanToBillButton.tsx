@@ -143,7 +143,7 @@ export const ScanToBillButton: React.FC<ScanToBillButtonProps> = ({ onFilled, br
               </div>
             </div>
 
-            <div className="text-[11px] text-zinc-500 text-center">
+            <div className="text-[11px] text-zinc-400 text-center">
               Member QR codes containing <code className="text-zinc-400">PULSE:MEMBER:ID</code> or standard 10-digit phone automatically prefill amount & balance.
             </div>
           </div>

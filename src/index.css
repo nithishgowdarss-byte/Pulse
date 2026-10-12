@@ -1,1 +1,21 @@
 @import "tailwindcss";
+
+/* Accessibility: visible keyboard focus everywhere */
+:focus-visible { outline: 2px solid #fb923c; outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; } }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+
+/* Print / Save as PDF for reports: print only the open dialog, on white */
+@media print {
+  html, body, #root { background: #fff !important; }
+  main, nav, header { display: none !important; }
+  .min-h-screen { min-height: 0 !important; }
+  .fixed:not([role="dialog"]):not(:has([role="dialog"])) { display: none !important; }
+  :has(> [role="dialog"]) { position: static !important; background: #fff !important; }
+  body * { visibility: hidden !important; }
+  [role="dialog"], [role="dialog"] * { visibility: visible !important; }
+  [role="dialog"] { position: absolute !important; inset: 0 !important; max-height: none !important; overflow: visible !important; background: #fff !important; color: #000 !important; border: 0 !important; }
+  [role="dialog"] * { color: #000 !important; background: transparent !important; border-color: #ccc !important; }
+  [role="dialog"] .bg-orange-500, [role="dialog"] .bg-sky-500 { background: #555 !important; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+  .no-print, [role="dialog"] button[aria-label="Close"] { display: none !important; }
+}

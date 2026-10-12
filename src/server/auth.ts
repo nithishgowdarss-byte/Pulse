@@ -114,7 +114,7 @@ type Rule = [method: string, path: RegExp];
 const R = (m: string, p: string): Rule => [m, new RegExp(`^${p}$`)];
 
 export const OWNER_ROLES = ['super_owner', 'owner'];
-const SUPER_ONLY: Rule[] = [R('*', '/api/auth/pins(/.*)?'), R('*', '/api/reset-seed'), R('DELETE', '/api/members/[^/]+')];
+const SUPER_ONLY: Rule[] = [R('*', '/api/admin/.*'), R('*', '/api/auth/pins(/.*)?'), R('*', '/api/reset-seed'), R('DELETE', '/api/members/[^/]+')];
 
 // Branch managers: everything staff-facing for their branch, but no global config.
 const MANAGER_DENY: Rule[] = [
@@ -127,6 +127,7 @@ const MANAGER_DENY: Rule[] = [
   R('POST', '/api/winback/(campaigns|run)'), R('POST', '/api/automations/run'), R('POST', '/api/churn/refresh'),
   R('POST', '/api/retention/(calculate-risk|flag-stale)'), R('PUT', '/api/balance-reminders/settings'), R('POST', '/api/balance-reminders/digest'),
   R('POST', '/api/contacts/quick-dump'),
+  R('POST', '/api/privacy/requests/[^/]+/resolve'), R('DELETE', '/api/expenses/[^/]+'), R('GET', '/api/privacy/export'),
 ];
 
 const TRAINER_ALLOW: Rule[] = [
@@ -137,6 +138,7 @@ const TRAINER_ALLOW: Rule[] = [
   R('POST', '/api/attendance/check-in'),
   R('GET', '/api/pt-packages'),
   R('POST', '/api/pt-packages/[^/]+/sessions'),
+  R('GET', '/api/renew-requests'), R('POST', '/api/renew-requests/[^/]+/resolve'),
   R('POST', '/api/members'),
   R('POST', '/api/members/[^/]+/(payment|renew|measurements|freeze|activate)'),
   R('POST', '/api/notifications/([^/]+/read|read-all)'),
@@ -151,6 +153,8 @@ const MEMBER_ALLOW: Rule[] = [
   R('POST', '/api/freeze-requests'),
   R('GET', '/api/members/[^/]+/pass'),
   R('GET', '/api/pt-packages'),
+  R('GET', '/api/privacy/(me|export)'), R('POST', '/api/privacy/(consent|requests)'),
+  R('GET', '/api/renew-requests'), R('POST', '/api/renew-requests(/[^/]+/resolve)?'),
   R('POST', '/api/freellmapi/(coach-chat|workout-plan|diet-plan)'),
 ];
 

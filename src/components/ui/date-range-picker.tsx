@@ -81,9 +81,9 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
 
       {/* Date Inputs */}
       <div className="flex items-center space-x-2 bg-zinc-950 px-3 py-1.5 rounded-xl border border-zinc-800 text-xs">
-        <Calendar className="w-3.5 h-3.5 text-zinc-500 shrink-0" />
+        <Calendar className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
         <div className="flex items-center space-x-1.5">
-          <span className="text-[10px] font-bold text-zinc-500 uppercase">From</span>
+          <span className="text-[10px] font-bold text-zinc-400 uppercase">From</span>
           <input
             type="date"
             value={value.from}
@@ -92,7 +92,7 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
           />
         </div>
         <div className="flex items-center space-x-1.5">
-          <span className="text-[10px] font-bold text-zinc-500 uppercase">To</span>
+          <span className="text-[10px] font-bold text-zinc-400 uppercase">To</span>
           <input
             type="date"
             value={value.to}

@@ -146,7 +146,7 @@ export const BannerStudioModal: React.FC<{ branches: Branch[]; onClose: () => vo
             </div>
             {copy && (
               <div className="space-y-2 bg-zinc-900/60 border border-zinc-800 rounded-2xl p-3">
-                <div className="text-[11px] text-zinc-500">Copy ({copySource === 'ai' ? 'AI' : 'template'}) — edit freely</div>
+                <div className="text-[11px] text-zinc-400">Copy ({copySource === 'ai' ? 'AI' : 'template'}) — edit freely</div>
                 {(['headline', 'subline', 'body', 'cta'] as const).map((k) => (
                   <input key={k} aria-label={`copy ${k}`} className={input} value={copy[k]} onChange={(e) => setCopy({ ...copy, [k]: e.target.value })} />
                 ))}
@@ -169,7 +169,7 @@ export const BannerStudioModal: React.FC<{ branches: Branch[]; onClose: () => vo
                 </div>
               </>
             ) : (
-              <div className="w-full h-64 grid place-items-center text-sm text-zinc-500 border border-dashed border-zinc-800 rounded-2xl">Fill the form and generate to preview</div>
+              <div className="w-full h-64 grid place-items-center text-sm text-zinc-400 border border-dashed border-zinc-800 rounded-2xl">Fill the form and generate to preview</div>
             )}
             <div className="w-full">
               <div className={label}>History ({history.length})</div>
@@ -178,7 +178,7 @@ export const BannerStudioModal: React.FC<{ branches: Branch[]; onClose: () => vo
                   <li key={h.id} className="flex items-center gap-2 py-2 text-xs">
                     <button onClick={() => reopen(h)} className="flex-1 text-left">
                       <div className="font-bold text-white">{h.copy.headline}</div>
-                      <div className="text-zinc-500">{h.type} · {new Date(h.created_at).toLocaleDateString('en-IN')} · {h.created_by_name} · {h.status}</div>
+                      <div className="text-zinc-400">{h.type} · {new Date(h.created_at).toLocaleDateString('en-IN')} · {h.created_by_name} · {h.status}</div>
                     </button>
                     {h.status === 'active' && <button onClick={() => archive(h.id)} aria-label="Archive banner" className="p-1.5 rounded-lg hover:bg-zinc-800"><Archive className="w-4 h-4" /></button>}
                   </li>

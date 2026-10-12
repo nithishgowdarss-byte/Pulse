@@ -217,7 +217,7 @@ export const BulkContactModal: React.FC<BulkContactModalProps> = ({
               {/* Members Preview Badge */}
               <div className="bg-zinc-950 p-4 rounded-2xl border border-zinc-800 flex items-center justify-between">
                 <div>
-                  <span className="text-[10px] font-bold text-zinc-500 uppercase block">Selected Audience</span>
+                  <span className="text-[10px] font-bold text-zinc-400 uppercase block">Selected Audience</span>
                   <span className="text-sm font-extrabold text-white">
                     {filteredMembers.length} Members ({filterType.toUpperCase()})
                   </span>
@@ -275,19 +275,19 @@ export const BulkContactModal: React.FC<BulkContactModalProps> = ({
               
               <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
                 {auditLogs.length === 0 ? (
-                  <div className="p-8 text-center text-zinc-500 text-xs">No export logs recorded yet.</div>
+                  <div className="p-8 text-center text-zinc-400 text-xs">No export logs recorded yet.</div>
                 ) : (
                   auditLogs.map((log) => (
                     <div key={log.id} className="p-3 bg-zinc-950 border border-zinc-800 rounded-xl flex items-center justify-between text-xs">
                       <div>
                         <span className="font-bold text-white block">Exported {log.member_count} Members</span>
-                        <span className="text-[10px] text-zinc-500">By {log.exported_by_name} • {log.filter_used}</span>
+                        <span className="text-[10px] text-zinc-400">By {log.exported_by_name} • {log.filter_used}</span>
                       </div>
                       <div className="text-right">
                         <span className="px-2 py-0.5 bg-orange-950 text-orange-400 font-mono font-bold text-[10px] rounded uppercase border border-orange-800">
                           {log.export_type}
                         </span>
-                        <span className="text-[10px] text-zinc-500 block mt-0.5">{new Date(log.created_at).toLocaleDateString()}</span>
+                        <span className="text-[10px] text-zinc-400 block mt-0.5">{new Date(log.created_at).toLocaleDateString()}</span>
                       </div>
                     </div>
                   ))
