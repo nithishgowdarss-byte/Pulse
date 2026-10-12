@@ -50,3 +50,11 @@ Banners are drawn in the browser on a canvas at 1080×1920 (story) or 1080×1080
 You can download a PNG, share it (Web Share API, or wa.me text as a fallback), and save it to history on the server.
 Members and staff only see active offers and events for their own branch (Member app → Notice). Only owners can create or edit banners;
 the server enforces this, so branch managers, trainers and members get 403.
+
+## Storage
+
+Data lives in SQLite (`DATA_DIR/pulse.db`, built-in `node:sqlite`, WAL mode, file mode 0600) and the schema is set up by numbered
+migrations (`src/server/sqliteStore.ts`). On first boot an existing legacy `pulse-db.json` is imported automatically and
+renamed to `pulse-db.json.imported-<ts>`. Writes are batched about every 500 ms and flushed on shutdown, and only collections that changed are rewritten.
+`/healthz` returns 503 if the database can't be reached. `STORAGE=json` switches back to the old JSON file store.
+Back up by copying `pulse.db*` while the app is stopped, or with `sqlite3 pulse.db ".backup out.db"`.

@@ -114,3 +114,12 @@ describe('AI config hardening', () => {
     expect(r.body.content.length).toBeGreaterThan(50);
   });
 });
+
+describe('durability wiring', () => {
+  it('snapshot includes PIN hashes, banners and the secret vault (regression: PIN resets were lost on restart)', async () => {
+    const fs = await import('fs');
+    const src = fs.readFileSync(new URL('../server.ts', import.meta.url), 'utf8');
+    const block = src.slice(src.indexOf('snapshot: () => ({'), src.indexOf('restore: (data: any)'));
+    for (const k of ['pinHashes', 'banners', 'secretVault', 'members', 'paymentHistory']) expect(block, k).toMatch(new RegExp(`\\b${k}\\b`));
+  });
+});

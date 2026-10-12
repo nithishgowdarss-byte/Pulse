@@ -59,6 +59,7 @@ const HOST = process.env.HOST || '127.0.0.1';
 
 import { securityHeaders, createRateLimiter, requestLogger, errorHandler, isProduction, createBasicAuthGate } from './src/server/http';
 import { createPersistence } from './src/server/persistence';
+import { createSqliteStore } from './src/server/sqliteStore';
 import { bodyValidator } from './src/server/validation';
 import { createVault, getSecretsKey, SealedSecret } from './src/server/secrets';
 import {
@@ -224,7 +225,8 @@ app.delete('/api/auth/pins/:id', (req, res) => {
 
 // Liveness / readiness probe (used by Docker HEALTHCHECK)
 app.get(['/healthz', '/api/health'], (_req, res) => {
-  res.json({ status: 'ok', uptimeSec: Math.round(process.uptime()), persistence: persistence?.describe() ?? 'disabled', time: new Date().toISOString() });
+  const dbOk = (persistence as any)?.ping ? (persistence as any).ping() : true;
+  res.status(dbOk ? 200 : 503).json({ status: dbOk ? 'ok' : 'degraded', db: dbOk ? 'ok' : 'unreachable', uptimeSec: Math.round(process.uptime()), persistence: persistence?.describe() ?? 'disabled', time: new Date().toISOString() });
 });
 
 // Destructive developer endpoints are disabled in production unless explicitly allowed
@@ -6851,8 +6853,9 @@ app.delete('/api/members/:id', (req, res) => {
 });
 
 // Durable storage: snapshot all collections to a JSON file (DATA_DIR) and restore on boot
-var persistence: ReturnType<typeof createPersistence> | null = null;
-persistence = createPersistence({
+var persistence: (ReturnType<typeof createPersistence> | ReturnType<typeof createSqliteStore>) | null = null;
+const makeStore: any = process.env.STORAGE === 'json' ? createPersistence : createSqliteStore;
+persistence = makeStore({
   dataDir: process.env.DATA_DIR || (isProduction() ? '/data' : path.join(process.cwd(), '.data')),
   enabled: process.env.PERSISTENCE !== 'off',
   snapshot: () => ({
@@ -6885,7 +6888,10 @@ persistence = createPersistence({
     balanceReminderSettings,
     branchRotationLogs,
     msg91DltTemplates,
-    branchSmsConfigs
+    branchSmsConfigs,
+    pinHashes,
+    banners,
+    secretVault,
   }),
   restore: (data: any) => {
     if (data.branches !== undefined) branches = data.branches;
@@ -6970,6 +6976,7 @@ async function startServer() {
   const shutdown = (signal: string) => {
     console.log(`[shutdown] ${signal} received, flushing data`);
     persistence?.flush();
+    (persistence as any)?.close?.();
     server.close(() => process.exit(0));
     setTimeout(() => process.exit(0), 5000).unref();
   };
