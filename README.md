@@ -58,3 +58,23 @@ migrations (`src/server/sqliteStore.ts`). On first boot an existing legacy `puls
 renamed to `pulse-db.json.imported-<ts>`. Writes are batched about every 500 ms and flushed on shutdown, and only collections that changed are rewritten.
 `/healthz` returns 503 if the database can't be reached. `STORAGE=json` switches back to the old JSON file store.
 Back up by copying `pulse.db*` while the app is stopped, or with `sqlite3 pulse.db ".backup out.db"`.
+
+## Container (verified with Podman 5.4)
+
+```bash
+podman build --format docker -t pulse .        # or: docker build -t pulse .
+podman run -d --name pulse -p 3000:3000 -v pulse-data:/data \
+  -e SESSION_SECRET=$(openssl rand -hex 32) -e SECRETS_KEY=$(openssl rand -hex 32) -e SUPER_OWNER_PIN=<pin> pulse
+curl http://127.0.0.1:3000/healthz             # {"status":"ok","db":"ok",...}
+```
+The image runs as the non-root `node` user, data goes in the `/data` volume, and the `HEALTHCHECK` polls `/healthz` (Podman needs `--format docker` for HEALTHCHECK).
+Keep `SESSION_SECRET` and `SECRETS_KEY` the same across restarts: changing `SECRETS_KEY` makes stored MSG91 keys unreadable, and changing `SESSION_SECRET` logs everyone out.
+
+## Using it from a phone (LAN or hosted)
+
+- The server listens on `127.0.0.1` by default. To reach it from phones on the gym Wi-Fi, set `HOST=0.0.0.0` (the container does this already)
+  and open `http://<server-LAN-IP>:3000`.
+- **Use HTTPS for real use.** Over plain `http://` on a LAN IP, browsers will not register the service worker (no offline mode or install),
+  camera access (QR check-in) is blocked, and the production session cookie is `Secure`, so login won't stick.
+  Put Caddy or nginx in front with a certificate (e.g. `caddy reverse-proxy --from pulse.example.in --to 127.0.0.1:3000`)
+  and set `TRUST_PROXY=1`. Only for a short LAN trial over HTTP can you set `COOKIE_INSECURE=1` (not for production).
