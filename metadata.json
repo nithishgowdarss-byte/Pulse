@@ -1,0 +1,6 @@
+{
+  "name": "Pulse Fitness - Gym Management",
+  "description": "Multi-branch Gym Operating System for Pulse Fitness (3 Owned Locations: Nagarabhavi, RR Nagar, Banashankari) with independent Trainer Portals, branch switcher, CRM lead tracking, automated lifecycle triggers, and financial audit logs.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
