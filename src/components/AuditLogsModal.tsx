@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { EmptySearch } from './ui/EmptySearch';
 import { AuditLogRecord, Profile } from '../types';
 import { ShieldCheck, History, Filter, Search } from 'lucide-react';
 import { safeFetchJson } from '../lib/apiUtils';
@@ -34,11 +35,7 @@ export const AuditLogsModal: React.FC<AuditLogsModalProps> = ({ currentProfile, 
   const filteredLogs = logs.filter(l => {
     if (!search) return true;
     const q = search.toLowerCase();
-    return (
-      l.action.toLowerCase().includes(q) ||
-      l.user_name.toLowerCase().includes(q) ||
-      (l.entity_id && l.entity_id.toLowerCase().includes(q))
-    );
+    return [l.action, l.user_name, (l as any).actor_id, l.entity_id, l.entity_type].some((v) => String(v ?? '').toLowerCase().includes(q));
   });
 
   return (
@@ -77,7 +74,7 @@ export const AuditLogsModal: React.FC<AuditLogsModalProps> = ({ currentProfile, 
 
           <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
             {filteredLogs.length === 0 ? (
-              <div className="p-8 text-center text-zinc-500 text-xs">No audit logs matching search query.</div>
+              <EmptySearch what="audit entries" query={search} onClear={() => setSearch('')} emptyHint="Actions like logins, PIN changes and exports appear here." />
             ) : (
               filteredLogs.map((log) => (
                 <div key={log.id} className="p-3.5 bg-zinc-950 border border-zinc-800 rounded-xl text-xs space-y-1">

@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { EmptySearch } from './ui/EmptySearch';
 import { KeyRound, X } from 'lucide-react';
 import { toast } from '../lib/toast';
 
@@ -40,6 +41,7 @@ export const PinManagementModal: React.FC<{ onClose: () => void }> = ({ onClose 
             className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-sm outline-none focus:border-red-500" />
         </div>
         <ul className="overflow-y-auto divide-y divide-zinc-900">
+          {shown.length === 0 && <li><EmptySearch what="people" query={filter} onClear={() => setFilter('')} emptyHint="Could not load the user list — close and reopen." /></li>}
           {shown.map((u) => (
             <li key={u.id} className="flex flex-wrap items-center gap-2 px-4 py-3 text-sm">
               <div className="flex-1 min-w-[10rem]">

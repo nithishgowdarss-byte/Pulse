@@ -162,7 +162,7 @@ app.post('/api/auth/login', (req, res) => {
   loginThrottle.success(acctKey);
   const token = encodeSession({ kind: hit.kind, id: hit.id, role: hit.role, pv: pinVersion(hit.id) });
   res.setHeader('Set-Cookie', sessionCookie(token));
-  auditLogs.unshift({ id: `aud_${Date.now()}`, actor_id: hit.id, action: 'auth.login', entity_type: 'session', entity_id: hit.id, created_at: new Date().toISOString() } as any);
+  auditLogs.unshift({ id: `aud_${Date.now()}`, actor_id: hit.id, user_name: sessionProfile({ ...hit, exp: 0 } as any)?.full_name || hit.id, action: 'auth.login', entity_type: 'session', entity_id: hit.id, created_at: new Date().toISOString() } as any);
   res.json({ kind: hit.kind, profile: sessionProfile({ ...hit, exp: 0 }) });
 });
 
@@ -385,8 +385,13 @@ let profiles: Profile[] = [
   }
 ];
 
+const GYM_TZ = process.env.GYM_TZ || 'Asia/Kolkata';
+/** Calendar date (YYYY-MM-DD) in the gym's timezone, not UTC (UTC "today" is wrong before 05:30 IST). */
+function gymDate(ms = Date.now()): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: GYM_TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(ms));
+}
 function getTodayStr(): string {
-  return new Date().toISOString().slice(0, 10);
+  return gymDate();
 }
 
 function addMonthsToDate(dateStr: string, months: number): string {
@@ -943,7 +948,7 @@ function calculateMemberRisk(
 
 function initializeSeedData() {
   const today = getTodayStr();
-  const yesterday = new Date(Date.now() - 24 * 3600 * 1000).toISOString().slice(0, 10);
+  const yesterday = gymDate(Date.now() - 24 * 3600 * 1000);
   const threeDaysAgo = new Date(Date.now() - 3 * 24 * 3600 * 1000).toISOString().slice(0, 10);
   const sixDaysAgo = new Date(Date.now() - 6 * 24 * 3600 * 1000).toISOString().slice(0, 10);
   const lastMonth = new Date(Date.now() - 32 * 24 * 3600 * 1000).toISOString().slice(0, 10);
@@ -965,8 +970,8 @@ function initializeSeedData() {
       branch_id: 'br_nag_1',
       branch_name: 'Pulse Fitness - Nagarbhavi',
       is_archived: false,
-      created_at: `${today}T10:15:00.000Z`,
-      updated_at: `${today}T10:15:00.000Z`
+      created_at: seedAt(today, `10:15`),
+      updated_at: seedAt(today, `10:15`)
     },
     {
       id: 'mem_2',
@@ -984,8 +989,8 @@ function initializeSeedData() {
       branch_id: 'br_nag_1',
       branch_name: 'Pulse Fitness - Nagarbhavi',
       is_archived: false,
-      created_at: `${today}T11:30:00.000Z`,
-      updated_at: `${today}T11:30:00.000Z`
+      created_at: seedAt(today, `11:30`),
+      updated_at: seedAt(today, `11:30`)
     },
     {
       id: 'mem_3',
@@ -1015,8 +1020,8 @@ function initializeSeedData() {
       mandate_status: 'active',
       next_billing_date: addMonthsToDate(today, 6),
       is_archived: false,
-      created_at: `${today}T08:00:00.000Z`,
-      updated_at: `${today}T08:05:00.000Z`
+      created_at: seedAt(today, `08:00`),
+      updated_at: seedAt(today, `08:05`)
     },
     {
       id: 'mem_4',
@@ -1042,8 +1047,8 @@ function initializeSeedData() {
       branch_id: 'br_nag_1',
       branch_name: 'Pulse Fitness - Nagarbhavi',
       is_archived: false,
-      created_at: `${today}T09:20:00.000Z`,
-      updated_at: `${today}T09:25:00.000Z`
+      created_at: seedAt(today, `09:20`),
+      updated_at: seedAt(today, `09:25`)
     },
     {
       id: 'mem_5',
@@ -1068,8 +1073,8 @@ function initializeSeedData() {
       branch_id: 'br_rr_2',
       branch_name: 'Pulse Fitness - RR Nagar',
       is_archived: false,
-      created_at: `${yesterday}T14:10:00.000Z`,
-      updated_at: `${yesterday}T14:15:00.000Z`
+      created_at: seedAt(yesterday, `14:10`),
+      updated_at: seedAt(yesterday, `14:15`)
     },
     {
       id: 'mem_6',
@@ -1093,8 +1098,8 @@ function initializeSeedData() {
       branch_id: 'br_nag_1',
       branch_name: 'Pulse Fitness - Nagarbhavi',
       is_archived: false,
-      created_at: `${sixDaysAgo}T17:45:00.000Z`,
-      updated_at: `${sixDaysAgo}T17:50:00.000Z`
+      created_at: seedAt(sixDaysAgo, `17:45`),
+      updated_at: seedAt(sixDaysAgo, `17:50`)
     },
     {
       id: 'mem_7',
@@ -1118,8 +1123,8 @@ function initializeSeedData() {
       branch_id: 'br_bsk_3',
       branch_name: 'Pulse Fitness - Banashankari',
       is_archived: false,
-      created_at: `${lastMonth}T10:00:00.000Z`,
-      updated_at: `${lastMonth}T10:05:00.000Z`
+      created_at: seedAt(lastMonth, `10:00`),
+      updated_at: seedAt(lastMonth, `10:05`)
     },
     {
       id: 'mem_8',
@@ -1143,8 +1148,8 @@ function initializeSeedData() {
       branch_id: 'br_bsk_3',
       branch_name: 'Pulse Fitness - Banashankari',
       is_archived: false,
-      created_at: `${threeDaysAgo}T09:00:00.000Z`,
-      updated_at: `${threeDaysAgo}T09:05:00.000Z`
+      created_at: seedAt(threeDaysAgo, `09:00`),
+      updated_at: seedAt(threeDaysAgo, `09:05`)
     }
   ];
 
@@ -1164,7 +1169,7 @@ function initializeSeedData() {
       assigned_trainer_name: 'Vishal',
       branch_id: 'br_nag_1',
       branch_name: 'Pulse Fitness - Nagarbhavi',
-      created_at: `${yesterday}T12:00:00.000Z`
+      created_at: seedAt(yesterday, `12:00`)
     },
     {
       id: 'lead_2',
@@ -1181,7 +1186,7 @@ function initializeSeedData() {
       assigned_trainer_name: 'Varaprasad',
       branch_id: 'br_bsk_3',
       branch_name: 'Pulse Fitness - Banashankari',
-      created_at: `${threeDaysAgo}T15:30:00.000Z`
+      created_at: seedAt(threeDaysAgo, `15:30`)
     },
     {
       id: 'lead_3',
@@ -1198,7 +1203,7 @@ function initializeSeedData() {
       assigned_trainer_name: 'Kumar',
       branch_id: 'br_rr_2',
       branch_name: 'Pulse Fitness - RR Nagar',
-      created_at: `${sixDaysAgo}T11:00:00.000Z`
+      created_at: seedAt(sixDaysAgo, `11:00`)
     }
   ];
 
@@ -1211,7 +1216,7 @@ function initializeSeedData() {
       title: 'Joined Pulse Fitness',
       description: 'Enrolled in 6-Month General Gym membership via GPay.',
       actor_name: 'Vishal (Trainer)',
-      created_at: `${today}T08:05:00.000Z`
+      created_at: seedAt(today, `08:05`)
     },
     {
       id: 'crm_2',
@@ -1221,7 +1226,7 @@ function initializeSeedData() {
       title: 'Payment Received (₹12,000)',
       description: 'Partial activation payment. Remaining balance due: ₹3,000.',
       actor_name: 'Manju (Trainer)',
-      created_at: `${today}T09:25:00.000Z`
+      created_at: seedAt(today, `09:25`)
     },
     {
       id: 'crm_3',
@@ -1231,7 +1236,7 @@ function initializeSeedData() {
       title: 'QR Check-in',
       description: 'Checked in at Nagarbhavi branch turnstile via Mobile QR Code.',
       actor_name: 'Vishal',
-      created_at: `${today}T06:30:00.000Z`
+      created_at: seedAt(today, `06:30`)
     }
   ];
 
@@ -1243,7 +1248,7 @@ function initializeSeedData() {
       content: 'Join Coach Vishal and Coach Manju this Sunday at 10 AM for a squat and deadlift form breakdown session! Free for all active members.',
       author_name: 'Bipin Amrutha (Super Owner)',
       category: 'event',
-      created_at: `${today}T09:00:00.000Z`
+      created_at: seedAt(today, `09:00`)
     },
     {
       id: 'ann_2',
@@ -1251,7 +1256,7 @@ function initializeSeedData() {
       content: 'Upgrade to VIP Annual Membership this week and get 2 extra months FREE + Complimentary Diet Plan.',
       author_name: 'Bipin Amrutha (Super Owner)',
       category: 'offer',
-      created_at: `${yesterday}T10:00:00.000Z`
+      created_at: seedAt(yesterday, `10:00`)
     }
   ];
 
@@ -1266,7 +1271,7 @@ function initializeSeedData() {
       chest_inches: 40.5,
       biceps_inches: 14.5,
       notes: 'Initial body composition check on joining',
-      created_at: `${today}T08:10:00.000Z`
+      created_at: seedAt(today, `08:10`)
     }
   ];
 
@@ -1280,7 +1285,7 @@ function initializeSeedData() {
       reason: 'Official business travel to London',
       status: 'pending',
       branch_id: 'br_rr_2',
-      created_at: `${today}T12:00:00.000Z`
+      created_at: seedAt(today, `12:00`)
     }
   ];
 
@@ -1296,7 +1301,7 @@ function initializeSeedData() {
       new_value: { name: 'Siddharth Rao', plan: 'General Gym', price: 12000 },
       branch_id: 'br_nag_1',
       device_info: 'Web Dashboard / Chrome',
-      created_at: `${today}T08:05:00.000Z`
+      created_at: seedAt(today, `08:05`)
     }
   ];
 
@@ -1307,7 +1312,7 @@ function initializeSeedData() {
       member_id: 'mem_3',
       member_name: 'Siddharth Rao',
       member_package: 'General Gym',
-      checked_in_at: `${today}T06:30:00.000Z`,
+      checked_in_at: seedAt(today, `06:30`),
       checked_in_by: 'usr_trainer_1',
       checked_in_by_name: 'Vishal',
       method: 'qr',
@@ -1318,7 +1323,7 @@ function initializeSeedData() {
       member_id: 'mem_4',
       member_name: 'Ananya Deshmukh',
       member_package: 'Personal Training (PT)',
-      checked_in_at: `${today}T07:15:00.000Z`,
+      checked_in_at: seedAt(today, `07:15`),
       checked_in_by: 'usr_trainer_2',
       checked_in_by_name: 'Manju',
       method: 'qr',
@@ -1329,7 +1334,7 @@ function initializeSeedData() {
       member_id: 'mem_5',
       member_name: 'Karan Kapoor',
       member_package: 'VIP Annual Membership',
-      checked_in_at: `${today}T08:05:00.000Z`,
+      checked_in_at: seedAt(today, `08:05`),
       checked_in_by: 'usr_trainer_5',
       checked_in_by_name: 'Kumar',
       method: 'manual',
@@ -1340,7 +1345,7 @@ function initializeSeedData() {
       member_id: 'mem_8',
       member_name: 'Manish Pandey',
       member_package: 'Cardio & HIIT Special',
-      checked_in_at: `${today}T09:00:00.000Z`,
+      checked_in_at: seedAt(today, `09:00`),
       checked_in_by: 'usr_trainer_4',
       checked_in_by_name: 'Gangadhar',
       method: 'qr',
@@ -1351,7 +1356,7 @@ function initializeSeedData() {
       member_id: 'mem_6',
       member_name: 'Neha Nair',
       member_package: 'General Gym',
-      checked_in_at: `${today}T18:15:00.000Z`,
+      checked_in_at: seedAt(today, `18:15`),
       checked_in_by: 'usr_trainer_1',
       checked_in_by_name: 'Vishal',
       method: 'qr',
@@ -1362,7 +1367,7 @@ function initializeSeedData() {
       member_id: 'mem_3',
       member_name: 'Siddharth Rao',
       member_package: 'General Gym',
-      checked_in_at: `${yesterday}T06:45:00.000Z`,
+      checked_in_at: seedAt(yesterday, `06:45`),
       checked_in_by: 'usr_trainer_1',
       checked_in_by_name: 'Vishal',
       method: 'qr',
@@ -1373,7 +1378,7 @@ function initializeSeedData() {
       member_id: 'mem_5',
       member_name: 'Karan Kapoor',
       member_package: 'VIP Annual Membership',
-      checked_in_at: `${yesterday}T07:30:00.000Z`,
+      checked_in_at: seedAt(yesterday, `07:30`),
       checked_in_by: 'usr_trainer_5',
       checked_in_by_name: 'Kumar',
       method: 'qr',
@@ -1384,7 +1389,7 @@ function initializeSeedData() {
       member_id: 'mem_6',
       member_name: 'Neha Nair',
       member_package: 'General Gym',
-      checked_in_at: `${yesterday}T18:40:00.000Z`,
+      checked_in_at: seedAt(yesterday, `18:40`),
       checked_in_by: 'usr_trainer_1',
       checked_in_by_name: 'Vishal',
       method: 'qr',
@@ -1395,7 +1400,7 @@ function initializeSeedData() {
       member_id: 'mem_8',
       member_name: 'Manish Pandey',
       member_package: 'Cardio & HIIT Special',
-      checked_in_at: `${yesterday}T19:15:00.000Z`,
+      checked_in_at: seedAt(yesterday, `19:15`),
       checked_in_by: 'usr_trainer_3',
       checked_in_by_name: 'Varaprasad',
       method: 'qr',
@@ -1413,14 +1418,14 @@ function initializeSeedData() {
   ];
 
   for (let d = 2; d <= 14; d++) {
-    const pastDate = new Date(Date.now() - d * 24 * 3600 * 1000).toISOString().slice(0, 10);
+    const pastDate = gymDate(Date.now() - d * 24 * 3600 * 1000);
     // Morning peak check-ins (6am - 9am)
     attendanceLogs.push({
       id: `att_past_${d}_1`,
       member_id: memberPool[d % memberPool.length].id,
       member_name: memberPool[d % memberPool.length].name,
       member_package: memberPool[d % memberPool.length].pkg,
-      checked_in_at: `${pastDate}T0${6 + (d % 3)}:${10 * (d % 5)}:00.000Z`,
+      checked_in_at: seedAt(pastDate, `0${6 + (d % 3)}:${10 * (d % 5)}`),
       checked_in_by: memberPool[d % memberPool.length].trainer,
       checked_in_by_name: memberPool[d % memberPool.length].trainerName,
       method: 'qr',
@@ -1433,7 +1438,7 @@ function initializeSeedData() {
         member_id: memberPool[(d + 1) % memberPool.length].id,
         member_name: memberPool[(d + 1) % memberPool.length].name,
         member_package: memberPool[(d + 1) % memberPool.length].pkg,
-        checked_in_at: `${pastDate}T07:45:00.000Z`,
+        checked_in_at: seedAt(pastDate, `07:45`),
         checked_in_by: 'usr_trainer_2',
         checked_in_by_name: 'Manju',
         method: 'qr',
@@ -1447,7 +1452,7 @@ function initializeSeedData() {
       member_id: memberPool[(d + 2) % memberPool.length].id,
       member_name: memberPool[(d + 2) % memberPool.length].name,
       member_package: memberPool[(d + 2) % memberPool.length].pkg,
-      checked_in_at: `${pastDate}T1${7 + (d % 3)}:20:00.000Z`,
+      checked_in_at: seedAt(pastDate, `1${7 + (d % 3)}:20`),
       checked_in_by: 'usr_trainer_1',
       checked_in_by_name: 'Vishal',
       method: 'qr',
@@ -1461,67 +1466,67 @@ function initializeSeedData() {
       id: 'stf_att_today_1',
       staff_id: 'usr_trainer_1', // Vishal - Nagarabhavi
       branch_id: 'br_nag_1',
-      checked_in_at: `${today}T06:30:00.000Z`,
+      checked_in_at: seedAt(today, `06:30`),
       checked_out_at: null, // Currently open shift (on floor)
       method: 'qr',
       notes: 'Morning shift opening check-in',
       recorded_by: 'usr_trainer_1',
-      created_at: `${today}T06:30:00.000Z`
+      created_at: seedAt(today, `06:30`)
     },
     {
       id: 'stf_att_today_2',
       staff_id: 'usr_trainer_2', // Manju - Nagarabhavi
       branch_id: 'br_nag_1',
-      checked_in_at: `${today}T06:00:00.000Z`,
-      checked_out_at: `${today}T11:00:00.000Z`,
+      checked_in_at: seedAt(today, `06:00`),
+      checked_out_at: seedAt(today, `11:00`),
       method: 'manual',
       notes: 'Morning batch trainer completed',
       recorded_by: 'usr_owner_1',
-      created_at: `${today}T06:00:00.000Z`
+      created_at: seedAt(today, `06:00`)
     },
     {
       id: 'stf_att_today_3',
       staff_id: 'usr_trainer_3', // Pradeep - RR Nagar
       branch_id: 'br_rr_2',
-      checked_in_at: `${today}T07:00:00.000Z`,
+      checked_in_at: seedAt(today, `07:00`),
       checked_out_at: null, // On floor
       method: 'qr',
       notes: 'Floor duty & PT slots',
       recorded_by: 'usr_trainer_3',
-      created_at: `${today}T07:00:00.000Z`
+      created_at: seedAt(today, `07:00`)
     },
     {
       id: 'stf_att_today_4',
       staff_id: 'usr_trainer_4', // Ananya - Banashankari
       branch_id: 'br_bsk_3',
-      checked_in_at: `${today}T06:45:00.000Z`,
+      checked_in_at: seedAt(today, `06:45`),
       checked_out_at: null, // On floor
       method: 'qr',
       notes: 'Zumba & General fitness shift',
       recorded_by: 'usr_trainer_4',
-      created_at: `${today}T06:45:00.000Z`
+      created_at: seedAt(today, `06:45`)
     },
     {
       id: 'stf_att_yesterday_1',
       staff_id: 'usr_trainer_1',
       branch_id: 'br_nag_1',
-      checked_in_at: `${yesterday}T06:30:00.000Z`,
-      checked_out_at: `${yesterday}T14:30:00.000Z`,
+      checked_in_at: seedAt(yesterday, `06:30`),
+      checked_out_at: seedAt(yesterday, `14:30`),
       method: 'qr',
       notes: 'Full day shift',
       recorded_by: 'usr_trainer_1',
-      created_at: `${yesterday}T06:30:00.000Z`
+      created_at: seedAt(yesterday, `06:30`)
     },
     {
       id: 'stf_att_yesterday_2',
       staff_id: 'usr_trainer_2',
       branch_id: 'br_nag_1',
-      checked_in_at: `${yesterday}T16:00:00.000Z`,
-      checked_out_at: `${yesterday}T21:30:00.000Z`,
+      checked_in_at: seedAt(yesterday, `16:00`),
+      checked_out_at: seedAt(yesterday, `21:30`),
       method: 'manual',
       notes: 'Evening shift',
       recorded_by: 'usr_owner_1',
-      created_at: `${yesterday}T16:00:00.000Z`
+      created_at: seedAt(yesterday, `16:00`)
     }
   ];
 
@@ -1533,7 +1538,7 @@ function initializeSeedData() {
       export_type: 'vcf',
       filter_used: 'Active Members',
       member_count: 5,
-      created_at: `${yesterday}T16:00:00.000Z`
+      created_at: seedAt(yesterday, `16:00`)
     }
   ];
 
@@ -1557,10 +1562,10 @@ function initializeSeedData() {
       period_end: today,
       period_month: currentMonthStr,
       status: 'paid',
-      paid_at: `${yesterday}T18:00:00.000Z`,
+      paid_at: seedAt(yesterday, `18:00`),
       paid_by: 'usr_owner_1',
       notes: 'Initial 6-month membership commission paid via UPI',
-      created_at: `${yesterday}T18:00:00.000Z`
+      created_at: seedAt(yesterday, `18:00`)
     },
     {
       id: 'set_2',
@@ -1581,7 +1586,7 @@ function initializeSeedData() {
       period_month: currentMonthStr,
       status: 'pending',
       notes: 'Partial activation payment commission',
-      created_at: `${today}T09:25:00.000Z`
+      created_at: seedAt(today, `09:25`)
     },
     {
       id: 'set_3',
@@ -1602,7 +1607,7 @@ function initializeSeedData() {
       period_month: currentMonthStr,
       status: 'pending',
       notes: 'New quarter membership commission',
-      created_at: `${today}T10:15:00.000Z`
+      created_at: seedAt(today, `10:15`)
     },
     {
       id: 'set_4',
@@ -1623,7 +1628,7 @@ function initializeSeedData() {
       period_month: currentMonthStr,
       status: 'pending',
       notes: 'Monthly HIIT coaching commission',
-      created_at: `${today}T11:00:00.000Z`
+      created_at: seedAt(today, `11:00`)
     },
     {
       id: 'set_5',
@@ -1644,7 +1649,7 @@ function initializeSeedData() {
       period_month: currentMonthStr,
       status: 'pending',
       notes: 'VIP Annual onboarding commission',
-      created_at: `${yesterday}T14:15:00.000Z`
+      created_at: seedAt(yesterday, `14:15`)
     }
   ];
 
@@ -1658,7 +1663,7 @@ function initializeSeedData() {
       notes: 'Initial 6-month general gym membership',
       received_by: 'usr_trainer_1',
       received_by_name: 'Rahul Sharma',
-      created_at: `${today}T08:05:00.000Z`
+      created_at: seedAt(today, `08:05`)
     },
     {
       id: 'pay_2',
@@ -1669,7 +1674,7 @@ function initializeSeedData() {
       notes: 'Partial activation payment (₹3,000 balance pending)',
       received_by: 'usr_trainer_2',
       received_by_name: 'Priya Patel',
-      created_at: `${today}T09:25:00.000Z`
+      created_at: seedAt(today, `09:25`)
     }
   ];
 
@@ -1682,7 +1687,7 @@ function initializeSeedData() {
       risk_score: 75,
       risk_level: 'high',
       reasons: ['Membership renewal due in 4 days', 'No gym check-in for 6 days'],
-      calculated_at: `${today}T06:00:00.000Z`
+      calculated_at: seedAt(today, `06:00`)
     },
     {
       id: 'mem_4_risk',
@@ -1691,7 +1696,7 @@ function initializeSeedData() {
       risk_score: 45,
       risk_level: 'medium',
       reasons: ['Outstanding balance of ₹3,000'],
-      calculated_at: `${today}T06:00:00.000Z`
+      calculated_at: seedAt(today, `06:00`)
     },
     {
       id: 'mem_3_risk',
@@ -1700,7 +1705,7 @@ function initializeSeedData() {
       risk_score: 10,
       risk_level: 'low',
       reasons: ['Consistent regular check-ins', 'E-Mandate AutoPay active'],
-      calculated_at: `${today}T06:00:00.000Z`
+      calculated_at: seedAt(today, `06:00`)
     }
   ];
 
@@ -1713,7 +1718,7 @@ function initializeSeedData() {
       severity: 'high',
       message: 'Membership renewal due in 4 days · Absent for 6 days',
       is_resolved: false,
-      created_at: `${today}T06:00:00.000Z`
+      created_at: seedAt(today, `06:00`)
     }
   ];
 
@@ -1725,7 +1730,7 @@ function initializeSeedData() {
       amount: 12000,
       status: 'success',
       razorpay_payment_id: 'pay_rzp_mock_9921',
-      attempted_at: `${today}T08:05:00.000Z`
+      attempted_at: seedAt(today, `08:05`)
     }
   ];
 
@@ -1741,8 +1746,8 @@ function initializeSeedData() {
       provider_response: { provider: 'WHATSAPP_CLOUD_API', status: 'DELIVERED' },
       reply_received: true,
       reply_text: 'Hi Rahul! Yes I will renew this Friday after my shift.',
-      replied_at: `${today}T11:00:00.000Z`,
-      sent_at: `${yesterday}T10:00:00.000Z`
+      replied_at: seedAt(today, `11:00`),
+      sent_at: seedAt(yesterday, `10:00`)
     }
   ];
 
@@ -1756,7 +1761,7 @@ function initializeSeedData() {
       body: '"Hi Rahul! Yes I will renew this Friday after my shift."',
       member_id: 'mem_6',
       is_read: false,
-      created_at: `${today}T11:00:00.000Z`
+      created_at: seedAt(today, `11:00`)
     },
     {
       id: 'notif_2',
@@ -1767,7 +1772,7 @@ function initializeSeedData() {
       body: 'Score 75/100: Renewal due in 4 days & no attendance for 6 days.',
       member_id: 'mem_6',
       is_read: false,
-      created_at: `${today}T06:00:00.000Z`
+      created_at: seedAt(today, `06:00`)
     }
   ];
 
@@ -1780,7 +1785,7 @@ function initializeSeedData() {
       max_attempts: 3,
       cooldown_hours: 48,
       is_active: true,
-      created_at: `${lastMonth}T00:00:00.000Z`
+      created_at: seedAt(lastMonth, `00:00`)
     }
   ];
 
@@ -1799,10 +1804,10 @@ function initializeSeedData() {
       status: 'messaged',
       attempt_count: 1,
       last_channel: 'whatsapp',
-      last_attempt_at: `${yesterday}T10:00:00.000Z`,
+      last_attempt_at: seedAt(yesterday, `10:00`),
       churn_probability: 0.8125,
-      created_at: `${yesterday}T09:00:00.000Z`,
-      updated_at: `${yesterday}T10:00:00.000Z`
+      created_at: seedAt(yesterday, `09:00`),
+      updated_at: seedAt(yesterday, `10:00`)
     },
     {
       id: 'enr_2',
@@ -1814,8 +1819,8 @@ function initializeSeedData() {
       status: 'enrolled',
       attempt_count: 0,
       churn_probability: 0.6134,
-      created_at: `${today}T06:00:00.000Z`,
-      updated_at: `${today}T06:00:00.000Z`
+      created_at: seedAt(today, `06:00`),
+      updated_at: seedAt(today, `06:00`)
     }
   ];
 
@@ -1829,7 +1834,7 @@ function initializeSeedData() {
       channel: 'whatsapp',
       status: 'sent',
       provider_id: 'msg_wac_991283',
-      created_at: `${yesterday}T10:00:00.000Z`
+      created_at: seedAt(yesterday, `10:00`)
     }
   ];
 }
@@ -1839,6 +1844,13 @@ initializeSeedData();
 /**
  * Dynamic Expiry Auto-Sync Helper
  */
+/** Seed clock times are gym-local (IST). Never produce a time in the future (e.g. "18:15 today" seen at 9 am). */
+function seedAt(day: string, hm: string): string {
+  const t = new Date(`${day}T${hm}:00+05:30`).getTime();
+  const latest = Date.now() - 10 * 60 * 1000;
+  return new Date(Number.isFinite(t) ? Math.min(t, latest) : latest).toISOString();
+}
+
 function syncMemberExpiries() {
   const todayStr = getTodayStr();
   members.forEach(m => {
@@ -2817,7 +2829,7 @@ app.post('/api/pt-packages', (req, res) => {
     notes: typeof notes === 'string' && notes.trim() ? notes.trim().slice(0, 300) : undefined, sessions: [], created_by: actor,
   };
   ptPackages.unshift(pkg);
-  auditLogs.unshift({ id: `aud_${Date.now()}`, actor_id: actor, action: 'pt.package.create', entity_type: 'pt_package', entity_id: pkg.id, created_at: new Date().toISOString() } as any);
+  auditLogs.unshift({ id: `aud_${Date.now()}`, actor_id: actor, user_name: profiles.find(p => p.id === actor)?.full_name || actor, action: 'pt.package.create', entity_type: 'pt_package', entity_id: pkg.id, created_at: new Date().toISOString() } as any);
   res.status(201).json({ package: ptView(pkg) });
 });
 app.post('/api/pt-packages/:id/sessions', (req, res) => {
@@ -3132,7 +3144,12 @@ app.get('/api/payroll-lines', (req, res) => {
   }
 
   list.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-  res.json(list);
+  // Older entries (e.g. logins, PIN changes) only carry actor_id: fill in who did it.
+  res.json(list.map((l: any) => {
+    if (l.user_name) return l;
+    const who = profiles.find(p => p.id === l.actor_id) || members.find(m => m.id === l.actor_id);
+    return { ...l, user_name: who?.full_name || l.actor_id || 'System', user_role: (who as any)?.role || (who ? 'member' : 'system') };
+  }));
 });
 
 // Commission Settlements API (Legacy backwards-compatible)
@@ -7124,9 +7141,15 @@ async function startServer() {
 
   app.use(errorHandler);
 
-  const server = app.listen(PORT, HOST, () => {
-    console.log(`Pulse Fitness Phase 2 Server running at http://${HOST}:${PORT}`);
-  });
+  // Optional built-in HTTPS (e.g. self-signed cert for phones on the gym LAN: camera + service worker need HTTPS).
+  const certFile = process.env.HTTPS_CERT, keyFile = process.env.HTTPS_KEY;
+  const server = certFile && keyFile
+    ? (await import('https')).createServer({ cert: fs.readFileSync(certFile), key: fs.readFileSync(keyFile) }, app).listen(PORT, HOST, () => {
+        console.log(`Pulse Fitness server running at https://${HOST}:${PORT} (HTTPS, cert ${path.basename(certFile)})`);
+      })
+    : app.listen(PORT, HOST, () => {
+        console.log(`Pulse Fitness Phase 2 Server running at http://${HOST}:${PORT}`);
+      });
 
   const shutdown = (signal: string) => {
     console.log(`[shutdown] ${signal} received, flushing data`);

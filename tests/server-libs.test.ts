@@ -100,3 +100,15 @@ describe('csvCell', () => {
     expect(csvCell(null)).toBe('');
   });
 });
+
+import { matchesPerson } from '../src/components/ui/EmptySearch';
+describe('matchesPerson', () => {
+  it('matches names in any script and formatted phones', () => {
+    expect(matchesPerson('ರಮೇಶ್', 'ರಮೇಶ್ ಗೌಡ 💪', '9876500011')).toBe(true);
+    expect(matchesPerson('98765 00011', 'x', '9876500011')).toBe(true);
+    expect(matchesPerson('+91 98765-00011', 'x', '9876500011')).toBe(true);
+    expect(matchesPerson('💪', 'ರಮೇಶ್ ಗೌಡ 💪', '9876500011')).toBe(true);
+    expect(matchesPerson('zz', 'Rhea', '9876500011')).toBe(false);
+    expect(matchesPerson('12', 'Rhea', '9876500011')).toBe(false);
+  });
+});

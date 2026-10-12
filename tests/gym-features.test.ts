@@ -173,3 +173,19 @@ describe('money integrity', () => {
     expect((await superA.post(`/api/members/${id}/renew`).send({ subscription_months: 1, commission_rate: 400 })).status).toBe(400);
   });
 });
+
+describe('seed data clock', () => {
+  it('has no attendance in the future', async () => {
+    const list = (await superA.get('/api/attendance')).body;
+    const future = list.filter((a: any) => new Date(a.checked_in_at).getTime() > Date.now() + 1000);
+    expect(future.map((a: any) => a.checked_in_at)).toEqual([]);
+  });
+});
+
+describe('audit log entries', () => {
+  it('always carry a user_name (UI search relies on it)', async () => {
+    const list = (await superA.get('/api/audit-logs')).body;
+    expect(list.length).toBeGreaterThan(0);
+    expect(list.filter((l: any) => typeof l.user_name !== 'string')).toEqual([]);
+  });
+});

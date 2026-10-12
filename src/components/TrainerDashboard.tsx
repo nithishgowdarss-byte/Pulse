@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { EmptySearch, matchesPerson } from './ui/EmptySearch';
 import { Member, Profile, CommissionSettlement, Branch } from '../types';
 import {
   Users,
@@ -80,7 +81,7 @@ export const TrainerDashboard: React.FC<TrainerDashboardProps> = ({
     if (activeTab === 'pending') return m.status === 'pending';
     if (searchQuery) {
       const q = searchQuery.toLowerCase().trim();
-      return m.full_name.toLowerCase().includes(q) || m.phone.includes(q);
+      return matchesPerson(q, m.full_name, m.phone);
     }
     return true;
   });
@@ -303,8 +304,9 @@ export const TrainerDashboard: React.FC<TrainerDashboardProps> = ({
                 <tbody className="divide-y divide-zinc-800/60">
                   {displayMembers.length === 0 ? (
                     <tr>
-                      <td colSpan={4} className="px-6 py-10 text-center text-zinc-500 text-xs">
-                        No member records found for this view.
+                      <td colSpan={4}>
+                        <EmptySearch what={activeTab === 'pending' ? 'pending activations' : 'members'} query={activeTab === 'pending' ? '' : searchQuery}
+                          onClear={() => setSearchQuery('')} emptyHint={activeTab === 'pending' ? 'All your clients are activated.' : 'Use “Onboard client” to add your first member.'} />
                       </td>
                     </tr>
                   ) : (

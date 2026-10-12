@@ -1,5 +1,6 @@
 // src/components/import/SmartContactAutoBranchDump.tsx
 import React, { useState, useMemo } from 'react';
+import { EmptySearch } from '../ui/EmptySearch';
 import {
   Upload,
   Send,
@@ -576,6 +577,7 @@ Sneha rr 9632114455`;
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-zinc-900 text-zinc-200">
+                    {displayedContacts.length === 0 && (<tr><td colSpan={5}><EmptySearch what="contacts" query={searchQuery} filterNote={filterBranch !== 'all' ? 'in the selected branch' : undefined} onClear={() => { setSearchQuery(''); setFilterBranch('all'); }} /></td></tr>)}
                     {displayedContacts.map((c) => {
                       const isNag = c.branchId === 'br_nag_1';
                       const isBsk = c.branchId === 'br_bsk_3';

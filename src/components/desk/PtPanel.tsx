@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { matchesPerson } from '../ui/EmptySearch';
 import { Plus, CheckCircle2, Undo2, Download } from 'lucide-react';
 import { apiJson, toCsv, downloadText } from '../../lib/http';
 
@@ -36,7 +37,7 @@ export const PtPanel: React.FC<{ role: string; branchId?: string }> = ({ role, b
 
   const memberMatches = useMemo(() => {
     const s = q.trim().toLowerCase();
-    return (s ? members.filter((m) => m.full_name.toLowerCase().includes(s) || String(m.phone).includes(s)) : members).slice(0, 50);
+    return (s ? members.filter((m) => matchesPerson(s, m.full_name, m.phone)) : members).slice(0, 50);
   }, [members, q]);
   const selMember = members.find((m) => m.id === form.member_id);
   const trainerOpts = trainers.filter((t) => !selMember || t.role === 'owner' || t.role === 'super_owner' || t.branch_id === selMember.branch_id || (t.assigned_branch_ids || []).includes(selMember.branch_id));
@@ -81,6 +82,7 @@ export const PtPanel: React.FC<{ role: string; branchId?: string }> = ({ role, b
       {showForm && (
         <form onSubmit={create} className="rounded-xl border border-zinc-800 bg-zinc-950 p-3 grid gap-2 sm:grid-cols-2" data-testid="pt-form">
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search member name/phone" className="sm:col-span-2 px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-700 text-sm text-white" />
+          {members.length > 0 && memberMatches.length === 0 && <p role="status" className="sm:col-span-2 text-[11px] text-amber-300">No member matches “{q}”. Check the spelling or type phone digits. <button type="button" className="underline" onClick={() => setQ('')}>Clear</button></p>}
           <select aria-label="Member" value={form.member_id} onChange={(e) => setForm({ ...form, member_id: e.target.value, trainer_id: '' })} className="px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-700 text-sm text-white">
             <option value="">{members.length ? `Member (${memberMatches.length} shown)` : 'Loading members…'}</option>
             {memberMatches.map((m) => <option key={m.id} value={m.id}>{m.full_name} · {m.phone}</option>)}
