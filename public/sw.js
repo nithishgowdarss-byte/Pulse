@@ -1,5 +1,5 @@
 // public/sw.js
-const CACHE = 'pulse-shell-v1';
+const CACHE = 'pulse-shell-v2';
 const SHELL = [
   '/',
   '/index.html',
@@ -74,9 +74,8 @@ self.addEventListener('fetch', (event) => {
         })
         .catch(() => {
           // Fallback to cached index or empty offline response without throwing
-          return caches.match('/index.html').then((fallback) => {
-            return fallback || new Response('Offline', { status: 503, statusText: 'Offline' });
-          });
+          // Never answer a script/style/image request with HTML (wrong MIME breaks the app)
+          return new Response('Offline', { status: 503, statusText: 'Offline' });
         });
     }).catch(() => {
       return new Response('Offline', { status: 503, statusText: 'Offline' });

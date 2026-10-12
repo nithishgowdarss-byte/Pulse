@@ -16,7 +16,6 @@ import { OfflineBanner } from './components/OfflineBanner';
 import { FreeLlmApiModal } from './components/FreeLlmApiModal';
 import { TrainerAiStudioModal } from './components/TrainerAiStudioModal';
 import { OwnerAiBroadcastModal } from './components/OwnerAiBroadcastModal';
-import { CodebaseViewerModal } from './components/CodebaseViewerModal';
 import { Profile, Member, UserRole, PlanPackage, PaymentMethod, Branch } from './types';
 
 import { safeFetchJson } from './lib/apiUtils';
@@ -41,7 +40,6 @@ export default function App() {
   // Action Modals
   const [isBulkExportOpen, setIsBulkExportOpen] = useState<boolean>(false);
   const [showExpoGuide, setShowExpoGuide] = useState<boolean>(false);
-  const [showCodebaseViewer, setShowCodebaseViewer] = useState<boolean>(false);
   const [showFreeLlmApiModal, setShowFreeLlmApiModal] = useState<boolean>(false);
   const [showTrainerStudioModal, setShowTrainerStudioModal] = useState<boolean>(false);
   const [trainerStudioTargetMember, setTrainerStudioTargetMember] = useState<Member | null>(null);
@@ -249,7 +247,6 @@ export default function App() {
         onOpenBranchManager={() => setShowBranchManager(true)}
         onResetSeed={handleResetSeed}
         onOpenExpoGuide={() => setShowExpoGuide(true)}
-        onOpenCodebaseViewer={() => setShowCodebaseViewer(true)}
         onOpenFreeLlmApi={() => setShowFreeLlmApiModal(true)}
         onOpenTrainerStudio={() => {
           setTrainerStudioTargetMember(null);
@@ -406,12 +403,6 @@ export default function App() {
           onClose={() => setShowExpoGuide(false)}
         />
       )}
-
-      {/* Complete Codebase Repository Viewer & PDF Hub Modal */}
-      <CodebaseViewerModal
-        isOpen={showCodebaseViewer}
-        onClose={() => setShowCodebaseViewer(false)}
-      />
 
       {/* FreeLLMAPI Central Gateway & Router Modal */}
       {showFreeLlmApiModal && (

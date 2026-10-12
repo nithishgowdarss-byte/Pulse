@@ -32,7 +32,7 @@ interface NavbarProps {
   onOpenBranchManager: () => void;
   onResetSeed: () => void;
   onOpenExpoGuide: () => void;
-  onOpenCodebaseViewer: () => void;
+  onOpenCodebaseViewer?: () => void;
   onOpenFreeLlmApi?: () => void;
   onOpenTrainerStudio?: () => void;
   onOpenOwnerBroadcast?: () => void;
@@ -178,7 +178,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
 
           {/* Right: User Profile & Tools */}
-          <div className="flex items-center space-x-2 sm:space-x-2.5">
+          <div className="flex items-center space-x-2 sm:space-x-2.5 min-w-0 flex-shrink">
 
             {/* Staff In-App Notification Bell */}
             <div className="relative">
@@ -256,7 +256,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-orange-950/80 via-zinc-900 to-zinc-900 border border-orange-500/50 hover:border-orange-400 text-orange-400 hover:text-orange-300 text-xs font-bold transition-all shadow-sm shadow-orange-500/10"
               >
                 <Zap className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
-                <span className="hidden sm:inline font-mono">FreeLLMAPI</span>
+                <span className="hidden xl:inline font-mono">FreeLLMAPI</span>
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
               </button>
             )}
@@ -265,7 +265,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             <button
               onClick={onOpenExpoGuide}
               title="View Expo React Native & Supabase Code"
-              className="hidden md:flex items-center space-x-1 px-3 py-1.5 rounded-xl bg-zinc-900 border border-zinc-700 text-zinc-300 text-xs hover:border-zinc-500 hover:text-white transition-all"
+              className="hidden 2xl:flex items-center space-x-1 px-3 py-1.5 rounded-xl bg-zinc-900 border border-zinc-700 text-zinc-300 text-xs hover:border-zinc-500 hover:text-white transition-all"
             >
               <Database className="w-3.5 h-3.5 text-red-400" />
               <span>Mobile Code</span>
@@ -279,20 +279,9 @@ export const Navbar: React.FC<NavbarProps> = ({
                 className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-red-600 via-orange-600 to-amber-600 hover:from-red-500 hover:to-orange-500 text-white text-xs font-black transition-all shadow-md shadow-red-600/30 cursor-pointer active:scale-95"
               >
                 <Zap className="w-3.5 h-3.5 fill-white text-white" />
-                <span className="hidden sm:inline">⚡ Dump Contacts</span>
+                <span className="hidden xl:inline">⚡ Dump Contacts</span>
               </button>
             )}
-
-            {/* Complete Codebase PDF & Source Viewer button */}
-            <button
-              onClick={onOpenCodebaseViewer}
-              title="Open Complete Codebase Viewer & Download PDF / TXT (109 files, 25,364 lines)"
-              className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-red-950/80 to-zinc-900 border border-red-500/50 hover:border-red-400 text-red-200 hover:text-white text-xs font-bold transition-all shadow-sm shadow-red-500/20 cursor-pointer active:scale-95"
-            >
-              <FileDown className="w-3.5 h-3.5 text-red-400 animate-pulse" />
-              <span className="hidden sm:inline">Codebase PDF / View</span>
-            </button>
-
 
             {/* User Account / Profile Switcher */}
             <div className="flex items-center bg-zinc-900 border border-zinc-800 rounded-2xl px-2.5 py-1.5 shadow-inner">

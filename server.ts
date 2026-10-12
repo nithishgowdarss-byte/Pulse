@@ -1,7 +1,7 @@
+import 'dotenv/config';
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
-import { createServer as createViteServer } from 'vite';
 import {
   Profile,
   Member,
@@ -53,9 +53,47 @@ import {
 import { LLMProviderId, FreeLLMChatMessage } from './src/types';
 
 const app = express();
-const PORT = 3000;
+const PORT = Number(process.env.PORT) || 3000;
+const HOST = process.env.HOST || '127.0.0.1';
 
-app.use(express.json());
+import { securityHeaders, createRateLimiter, requestLogger, errorHandler, isProduction, createBasicAuthGate } from './src/server/http';
+import { createPersistence } from './src/server/persistence';
+import { bodyValidator } from './src/server/validation';
+
+app.disable('x-powered-by');
+app.set('trust proxy', process.env.TRUST_PROXY === '1' ? 1 : false);
+app.use(securityHeaders);
+app.use(requestLogger);
+app.use(createBasicAuthGate(process.env.PULSE_BASIC_AUTH));
+if (isProduction() && !process.env.PULSE_BASIC_AUTH) {
+  console.warn('[security] PULSE_BASIC_AUTH is not set: the app has no login. Do not expose it publicly.');
+}
+app.use(express.json({ limit: process.env.JSON_LIMIT || '1mb' }));
+app.use('/api', bodyValidator);
+app.use((req, res, next) => {
+  if (req.method !== 'GET' && req.method !== 'HEAD' && req.method !== 'OPTIONS') {
+    res.on('finish', () => { if (res.statusCode < 400) persistence?.markDirty(); });
+  }
+  next();
+});
+app.use('/api/freellmapi', createRateLimiter({ windowMs: 60_000, max: Number(process.env.AI_RATE_LIMIT_PER_MIN) || 20 }));
+app.use('/api', createRateLimiter({ windowMs: 60_000, max: Number(process.env.API_RATE_LIMIT_PER_MIN) || 600 }));
+
+// Liveness / readiness probe (used by Docker HEALTHCHECK)
+app.get(['/healthz', '/api/health'], (_req, res) => {
+  res.json({ status: 'ok', uptimeSec: Math.round(process.uptime()), persistence: persistence?.describe() ?? 'disabled', time: new Date().toISOString() });
+});
+
+// Destructive developer endpoints are disabled in production unless explicitly allowed
+const devEndpointsAllowed = !isProduction() || process.env.PULSE_ALLOW_DEV_ENDPOINTS === '1';
+app.use(['/api/reset-seed'], (req, res, next) => {
+  if (!devEndpointsAllowed) return res.status(403).json({ error: 'Disabled in production', code: 'DEV_ENDPOINT_DISABLED' });
+  next();
+});
+app.delete('/api/members/:id', (req, res, next) => {
+  if (!devEndpointsAllowed) return res.status(403).json({ error: 'Hard delete disabled in production; archive instead', code: 'DEV_ENDPOINT_DISABLED' });
+  next();
+});
 
 // Multi-Branch Seed Data (3 Owned & Operated Locations)
 let branches: Branch[] = [
@@ -2985,146 +3023,6 @@ app.post('/api/payments', (req, res) => {
   recordCommissionSettlementOnPayment(payId, member, payVal, `Payment top-up settlement`);
 
   res.status(201).json({ success: true, payment: payRecord, member });
-});
-
-// Entire Codebase PDF & TXT Endpoints
-app.get('/api/download-codebase-pdf', (req, res) => {
-  const pdfCandidates = [
-    path.resolve(process.cwd(), 'public', 'pulse-fitness-entire-codebase.pdf'),
-    path.resolve(process.cwd(), 'pulse-fitness-entire-codebase.pdf')
-  ];
-
-  const pdfPath = pdfCandidates.find(p => fs.existsSync(p));
-
-  if (pdfPath) {
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Accept-Ranges', 'bytes');
-    res.download(pdfPath, 'pulse-fitness-entire-codebase.pdf');
-  } else {
-    res.status(404).json({ error: 'Codebase PDF is not found.' });
-  }
-});
-
-app.get('/api/view-codebase-pdf', (req, res) => {
-  const pdfCandidates = [
-    path.resolve(process.cwd(), 'public', 'pulse-fitness-entire-codebase.pdf'),
-    path.resolve(process.cwd(), 'pulse-fitness-entire-codebase.pdf')
-  ];
-
-  const pdfPath = pdfCandidates.find(p => fs.existsSync(p));
-
-  if (pdfPath) {
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', 'inline; filename="pulse-fitness-entire-codebase.pdf"');
-    res.setHeader('Accept-Ranges', 'bytes');
-    res.sendFile(pdfPath);
-  } else {
-    res.status(404).json({ error: 'Codebase PDF is not found.' });
-  }
-});
-
-app.get('/api/download-codebase-txt', (req, res) => {
-  const txtCandidates = [
-    path.resolve(process.cwd(), 'public', 'pulse-fitness-entire-codebase.txt'),
-    path.resolve(process.cwd(), 'pulse-fitness-entire-codebase.txt')
-  ];
-
-  const txtPath = txtCandidates.find(p => fs.existsSync(p));
-
-  if (txtPath) {
-    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-    res.download(txtPath, 'pulse-fitness-entire-codebase.txt');
-  } else {
-    res.status(404).json({ error: 'Codebase TXT is not found.' });
-  }
-});
-
-app.get('/api/codebase/manifest', (req, res) => {
-  const rootDir = process.cwd();
-  function getAllFiles(dir, fileList: string[] = []) {
-    const files = fs.readdirSync(dir);
-    for (const file of files) {
-      const filePath = path.join(dir, file);
-      const stat = fs.statSync(filePath);
-      if (stat.isDirectory()) {
-        if (!['node_modules', 'dist', '.git', '.github', '.vite'].includes(file)) {
-          getAllFiles(filePath, fileList);
-        }
-      } else {
-        const ext = path.extname(file).toLowerCase();
-        const base = path.basename(file);
-        if (
-          !['.png', '.ico', '.svg', '.jpeg', '.jpg', '.pdf', '.lock'].includes(ext) &&
-          file !== 'bun.lock' &&
-          file !== 'package-lock.json' &&
-          !base.includes('entire-codebase') &&
-          !base.startsWith('.') &&
-          !dir.includes('.aistudio')
-        ) {
-          fileList.push(filePath);
-        }
-      }
-    }
-    return fileList;
-  }
-
-  const allFiles = getAllFiles(rootDir);
-  const items = allFiles.map((fp, idx) => {
-    const relPath = path.relative(rootDir, fp).replace(/\\/g, '/');
-    const stat = fs.statSync(fp);
-    const content = fs.readFileSync(fp, 'utf8');
-    const lines = content.split('\n');
-    let category = 'Other';
-    if (relPath.startsWith('src/components/')) category = 'Components';
-    else if (relPath.startsWith('src/hooks/')) category = 'Hooks';
-    else if (relPath.startsWith('src/lib/')) category = 'Business Logic (Lib)';
-    else if (relPath.startsWith('src/types/')) category = 'TypeScript Types';
-    else if (relPath === 'server.ts') category = 'Server Backend';
-    else if (relPath.startsWith('supabase/')) category = 'Database Migrations';
-    else if (relPath.startsWith('scripts/')) category = 'Scripts';
-    else if (relPath === 'package.json' || relPath === 'tsconfig.json' || relPath === 'vite.config.ts' || relPath === 'metadata.json') category = 'Configuration';
-
-    return {
-      index: idx + 1,
-      path: relPath,
-      size: stat.size,
-      linesCount: lines.length,
-      category
-    };
-  });
-
-  res.json({
-    totalFiles: items.length,
-    totalLines: items.reduce((acc, curr) => acc + curr.linesCount, 0),
-    files: items
-  });
-});
-
-app.get('/api/codebase/file', (req, res) => {
-  const filePath = req.query.path as string;
-  if (!filePath) {
-    return res.status(400).json({ error: 'File path required' });
-  }
-
-  const safeRelPath = path.normalize(filePath).replace(/^(\.\.(\/|\\|$))+/, '');
-  const absPath = path.resolve(process.cwd(), safeRelPath);
-
-  if (!absPath.startsWith(process.cwd()) || !fs.existsSync(absPath)) {
-    return res.status(404).json({ error: 'File not found' });
-  }
-
-  try {
-    const content = fs.readFileSync(absPath, 'utf8');
-    const lines = content.split('\n');
-    res.json({
-      path: safeRelPath,
-      linesCount: lines.length,
-      content,
-      lines
-    });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
 });
 
 // Line-Level Payroll & Commission Settlements API (Matches SQL View & RPC get_payroll_lines)
@@ -6490,12 +6388,18 @@ app.post('/api/freellmapi/update-config', (req, res) => {
     return res.status(400).json({ error: 'Invalid provider ID' });
   }
 
-  updateProviderConfig(provider as LLMProviderId, {
-    apiKey,
-    model,
-    enabled,
-    priority,
-  });
+  if (apiKey !== undefined && process.env.PULSE_ALLOW_RUNTIME_KEYS !== '1') {
+    return res.status(403).json({ error: 'API keys must be configured via server environment variables', code: 'RUNTIME_KEYS_DISABLED' });
+  }
+  if (model !== undefined && (typeof model !== 'string' || model.length > 120)) {
+    return res.status(400).json({ error: 'Invalid model' });
+  }
+  const updates: Record<string, unknown> = {};
+  if (apiKey !== undefined) updates.apiKey = String(apiKey);
+  if (model !== undefined) updates.model = model;
+  if (enabled !== undefined) updates.enabled = Boolean(enabled);
+  if (priority !== undefined && Number.isFinite(Number(priority))) updates.priority = Number(priority);
+  updateProviderConfig(provider as LLMProviderId, updates);
 
   res.json({ success: true, status: getFreeLLMStatus() });
 });
@@ -6708,9 +6612,83 @@ app.delete('/api/members/:id', (req, res) => {
   res.json({ success: true, id });
 });
 
+// Durable storage: snapshot all collections to a JSON file (DATA_DIR) and restore on boot
+var persistence: ReturnType<typeof createPersistence> | null = null;
+persistence = createPersistence({
+  dataDir: process.env.DATA_DIR || (isProduction() ? '/data' : path.join(process.cwd(), '.data')),
+  enabled: process.env.PERSISTENCE !== 'off',
+  snapshot: () => ({
+    branches,
+    profiles,
+    members,
+    attendanceLogs,
+    staffAttendanceLogs,
+    exportLogs,
+    commissionSettlements,
+    paymentHistory,
+    crmActivities,
+    leads,
+    automationRules,
+    automationLogs,
+    auditLogs,
+    freezeRequests,
+    measurements,
+    announcements,
+    memberRiskScores,
+    retentionAlerts,
+    autoDebitAttempts,
+    retentionOutreachLogs,
+    staffNotifications,
+    memberChurnPredictions,
+    winbackCampaigns,
+    winbackEnrollments,
+    winbackAttempts,
+    balanceReminderLogs,
+    balanceReminderSettings,
+    branchRotationLogs,
+    msg91DltTemplates,
+    branchSmsConfigs
+  }),
+  restore: (data: any) => {
+    if (data.branches !== undefined) branches = data.branches;
+    if (data.profiles !== undefined) profiles = data.profiles;
+    if (data.members !== undefined) members = data.members;
+    if (data.attendanceLogs !== undefined) attendanceLogs = data.attendanceLogs;
+    if (data.staffAttendanceLogs !== undefined) staffAttendanceLogs = data.staffAttendanceLogs;
+    if (data.exportLogs !== undefined) exportLogs = data.exportLogs;
+    if (data.commissionSettlements !== undefined) commissionSettlements = data.commissionSettlements;
+    if (data.paymentHistory !== undefined) paymentHistory = data.paymentHistory;
+    if (data.crmActivities !== undefined) crmActivities = data.crmActivities;
+    if (data.leads !== undefined) leads = data.leads;
+    if (data.automationRules !== undefined) automationRules = data.automationRules;
+    if (data.automationLogs !== undefined) automationLogs = data.automationLogs;
+    if (data.auditLogs !== undefined) auditLogs = data.auditLogs;
+    if (data.freezeRequests !== undefined) freezeRequests = data.freezeRequests;
+    if (data.measurements !== undefined) measurements = data.measurements;
+    if (data.announcements !== undefined) announcements = data.announcements;
+    if (data.memberRiskScores !== undefined) memberRiskScores = data.memberRiskScores;
+    if (data.retentionAlerts !== undefined) retentionAlerts = data.retentionAlerts;
+    if (data.autoDebitAttempts !== undefined) autoDebitAttempts = data.autoDebitAttempts;
+    if (data.retentionOutreachLogs !== undefined) retentionOutreachLogs = data.retentionOutreachLogs;
+    if (data.staffNotifications !== undefined) staffNotifications = data.staffNotifications;
+    if (data.memberChurnPredictions !== undefined) memberChurnPredictions = data.memberChurnPredictions;
+    if (data.winbackCampaigns !== undefined) winbackCampaigns = data.winbackCampaigns;
+    if (data.winbackEnrollments !== undefined) winbackEnrollments = data.winbackEnrollments;
+    if (data.winbackAttempts !== undefined) winbackAttempts = data.winbackAttempts;
+    if (data.balanceReminderLogs !== undefined) balanceReminderLogs = data.balanceReminderLogs;
+    if (data.balanceReminderSettings !== undefined) balanceReminderSettings = data.balanceReminderSettings;
+    if (data.branchRotationLogs !== undefined) branchRotationLogs = data.branchRotationLogs;
+    if (data.msg91DltTemplates !== undefined) msg91DltTemplates = data.msg91DltTemplates;
+    if (data.branchSmsConfigs !== undefined) branchSmsConfigs = data.branchSmsConfigs;
+  },
+});
+persistence.load();
+
 // Start Server with Vite Middleware
 async function startServer() {
+  app.use('/api', (_req, res) => res.status(404).json({ error: 'Not found' }));
   if (process.env.NODE_ENV !== 'production') {
+    const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
@@ -6718,15 +6696,51 @@ async function startServer() {
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
+    // Never serve server bundles or source maps from the web root
+    app.use((req, res, next) => (/\.(cjs|map)$/i.test(req.path) ? res.status(404).end() : next()));
+    app.use(
+      express.static(distPath, {
+        index: false,
+        setHeaders: (res, filePath) => {
+          const base = path.basename(filePath);
+          if (base === 'sw.js' || base === 'index.html' || base.endsWith('.webmanifest')) {
+            res.setHeader('Cache-Control', 'no-cache');
+          } else if (filePath.includes(`${path.sep}assets${path.sep}`)) {
+            res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+          }
+        },
+      })
+    );
     app.get('*', (req, res) => {
+      res.setHeader('Cache-Control', 'no-cache');
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Pulse Fitness Phase 2 Server running at http://localhost:${PORT}`);
+  app.use(errorHandler);
+
+  const server = app.listen(PORT, HOST, () => {
+    console.log(`Pulse Fitness Phase 2 Server running at http://${HOST}:${PORT}`);
   });
+
+  const shutdown = (signal: string) => {
+    console.log(`[shutdown] ${signal} received, flushing data`);
+    persistence?.flush();
+    server.close(() => process.exit(0));
+    setTimeout(() => process.exit(0), 5000).unref();
+  };
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
 }
 
-startServer();
+export { app };
+
+if (process.env.VITEST) {
+  app.use('/api', (_req, res) => res.status(404).json({ error: 'Not found' }));
+  app.use(errorHandler);
+} else {
+  startServer().catch((err) => {
+    console.error('[fatal] failed to start server', err);
+    process.exit(1);
+  });
+}
