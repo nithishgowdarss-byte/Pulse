@@ -5299,11 +5299,13 @@ app.get('/api/balance-reminders/targets', (req, res) => {
   const targets: BalanceReminderTarget[] = [];
   const invalidPhone: any[] = [];
   let inCooldown = 0;
+  let totalOutstanding = 0;
   for (const m of members) {
     if (m.is_archived) continue;
     if (branch_id && branch_id !== 'all' && m.branch_id !== branch_id) continue;
     const bal = Number(m.balance_due) || 0;
     if (bal < minBal) continue;
+    totalOutstanding += bal;
 
     const p10 = phone10(m.phone);
     if (!p10) { invalidPhone.push({ member_id: m.id, full_name: m.full_name, phone: m.phone, balance_due: bal, branch_id: m.branch_id }); continue; }
@@ -5345,7 +5347,7 @@ app.get('/api/balance-reminders/targets', (req, res) => {
   }
 
   targets.sort((a, b) => b.balance_due - a.balance_due);
-  res.json({ targets, count: targets.length, invalid_phone: invalidPhone, in_cooldown: inCooldown, cooldown_days: cooldownDays });
+  res.json({ targets, count: targets.length, invalid_phone: invalidPhone, in_cooldown: inCooldown, cooldown_days: cooldownDays, total_outstanding: totalOutstanding });
 });
 
 // POST /api/balance-reminders/log

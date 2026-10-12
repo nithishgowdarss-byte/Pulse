@@ -4,7 +4,7 @@ import { apiJson, toCsv, downloadText } from '../../lib/http';
 import { buildBalanceReminder } from '../../lib/balanceReminder';
 
 type Target = { member_id: string; full_name: string; phone: string; balance_due: number; branch_name?: string; branch_id?: string; days_overdue?: number; last_reminder_at?: string; package_type?: string; status?: string };
-type Resp = { targets: Target[]; invalid_phone: { member_id: string; full_name: string; phone: string; balance_due: number }[]; in_cooldown: number; cooldown_days: number };
+type Resp = { total_outstanding?: number; targets: Target[]; invalid_phone: { member_id: string; full_name: string; phone: string; balance_due: number }[]; in_cooldown: number; cooldown_days: number };
 
 export const DuesPanel: React.FC<{ branchId?: string; actorName?: string }> = ({ branchId, actorName }) => {
   const [data, setData] = useState<Resp | null>(null);
@@ -45,7 +45,7 @@ export const DuesPanel: React.FC<{ branchId?: string; actorName?: string }> = ({
       `pulse-dues-${new Date().toISOString().slice(0, 10)}.csv`);
   };
 
-  const total = data ? data.targets.reduce((s, t) => s + t.balance_due, 0) + data.invalid_phone.reduce((s, t) => s + t.balance_due, 0) : 0;
+  const total = data?.total_outstanding ?? (data ? data.targets.reduce((s, t) => s + t.balance_due, 0) + data.invalid_phone.reduce((s, t) => s + t.balance_due, 0) : 0);
 
   return (
     <div className="space-y-3" data-testid="dues-panel">

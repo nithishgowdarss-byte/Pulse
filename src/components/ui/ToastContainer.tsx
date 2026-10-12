@@ -14,7 +14,7 @@ export const ToastContainer: React.FC = () => {
   if (items.length === 0) return null;
 
   return (
-    <div className="fixed bottom-4 right-4 z-50 flex flex-col space-y-2 max-w-sm w-full pointer-events-none">
+    <div className="fixed bottom-4 left-4 right-4 sm:left-auto z-[100] flex flex-col space-y-2 sm:max-w-sm sm:w-full pointer-events-none">
       {items.map((item) => {
         const isSuccess = item.type === 'success';
         const isError = item.type === 'error';

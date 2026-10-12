@@ -7,6 +7,8 @@ import { calculateDaysRemaining } from '../lib/membership';
 import { formatPhoneDisplay } from '../lib/phoneUtils';
 import { PulseAiCoachChat } from './PulseAiCoachChat';
 import { safeFetchJson } from '../lib/apiUtils';
+import { apiJson } from '../lib/http';
+import { set as idbSet } from 'idb-keyval';
 
 interface MemberAppViewProps {
   currentProfile: Profile;
@@ -20,6 +22,7 @@ export const MemberAppView: React.FC<MemberAppViewProps> = ({ currentProfile, on
   const [announcements, setAnnouncements] = useState<GymAnnouncement[]>([]);
   const [activeTab, setActiveTab] = useState<'pass' | 'measurements' | 'ai_coach' | 'freeze' | 'announcements'>('pass');
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
 
   // Freeze Request Form
   const [freezeStart, setFreezeStart] = useState('');
@@ -29,8 +32,17 @@ export const MemberAppView: React.FC<MemberAppViewProps> = ({ currentProfile, on
 
   const fetchMemberSelf = async () => {
     setLoading(true);
+    setLoadError('');
     try {
-      const list = await safeFetchJson<Member[]>('/api/members', undefined, []);
+      let list: Member[] | null = null;
+      try {
+        list = await apiJson<Member[]>('/api/members');
+        idbSet('api_cache_/api/members', list).catch(() => {});
+      } catch (e: any) {
+        // Offline / server down: fall back to the last cached copy, otherwise say why.
+        list = await safeFetchJson<Member[]>('/api/members', undefined, null);
+        if (!list || list.length === 0) { setLoadError(e?.message || 'Could not load your membership.'); return; }
+      }
       if (list && list.length > 0) {
         // Match member by email or phone or default first active member
         const found = list.find(m => m.email === currentProfile.email || m.phone === currentProfile.phone) || list[0];
@@ -129,8 +141,9 @@ export const MemberAppView: React.FC<MemberAppViewProps> = ({ currentProfile, on
       <div className="min-h-screen bg-zinc-950 text-white p-6 flex items-center justify-center">
         <div className="bg-zinc-900 border border-zinc-800 p-8 rounded-3xl max-w-sm w-full text-center space-y-4">
           <Dumbbell className="w-12 h-12 text-orange-500 mx-auto" />
-          <h3 className="text-lg font-black">Member Profile Not Found</h3>
-          <p className="text-xs text-zinc-400">Please ask your gym trainer or manager to onboard your phone number.</p>
+          <h3 className="text-lg font-black">{loadError ? 'Couldn’t load your membership' : 'Member Profile Not Found'}</h3>
+          <p role={loadError ? 'alert' : undefined} className="text-xs text-zinc-400">{loadError || 'Please ask your gym trainer or manager to onboard your phone number.'}</p>
+          {loadError && <button onClick={fetchMemberSelf} className="w-full py-3 bg-orange-600 text-white text-xs font-bold rounded-xl">Try again</button>}
           <button onClick={onLogout} className="w-full py-3 bg-zinc-800 text-white text-xs font-bold rounded-xl">
             Back to Login
           </button>

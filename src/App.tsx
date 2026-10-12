@@ -23,7 +23,7 @@ import { LoginScreen } from './components/LoginScreen';
 import { PinManagementModal } from './components/PinManagementModal';
 import { BannerStudioModal } from './components/BannerStudioModal';
 import { DeskToolsModal } from './components/desk/DeskToolsModal';
-import { installAuthInterceptor, fetchMe, logout, AUTH_REQUIRED_EVENT } from './lib/auth';
+import { installAuthInterceptor, fetchMe, logout, rememberProfile, AUTH_REQUIRED_EVENT } from './lib/auth';
 
 installAuthInterceptor();
 
@@ -103,7 +103,7 @@ export default function App() {
       if (me) { setCurrentProfile(me); setViewMode(defaultViewFor(me)); if (me.role === 'trainer') setSelectedTrainerId(me.id); }
       setAuthChecked(true);
     });
-    const onAuthRequired = () => setCurrentProfile(null);
+    const onAuthRequired = () => { rememberProfile(null); setCurrentProfile(null); };
     window.addEventListener(AUTH_REQUIRED_EVENT, onAuthRequired);
     return () => window.removeEventListener(AUTH_REQUIRED_EVENT, onAuthRequired);
   }, []);
